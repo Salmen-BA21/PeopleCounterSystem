@@ -1,0 +1,4 @@
+onvif-python>=0.1.6
+opencv-python>=4.8
+supervision>=0.27
+ultralytics>=8.3
