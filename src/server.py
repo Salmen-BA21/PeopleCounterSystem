@@ -23,13 +23,13 @@ from pydantic import BaseModel
 
 from src.count_people import (
     PeopleCounter,
-    build_parser,
     default_entering_direction,
     line_from_args,
     line_orientation,
     parse_line,
     source_with_credentials,
 )
+from src import discover_cameras
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT_DIR / "web"
@@ -50,6 +50,21 @@ class SourceChangeRequest(BaseModel):
     source: str
 
 
+class CameraConnectRequest(BaseModel):
+    host: str
+    port: int = 80
+    username: str
+    password: str
+    profile_token: str | None = None
+
+
+class CameraProfilesRequest(BaseModel):
+    host: str
+    port: int = 80
+    username: str
+    password: str
+
+
 class VideoStreamWorker:
     """Worker running in a background thread for frame capture and inference."""
 
@@ -58,10 +73,12 @@ class VideoStreamWorker:
         source: str,
         counter: PeopleCounter,
         jpeg_quality: int = 75,
+        model_name: str = "",
     ) -> None:
         self.source = source
         self.counter = counter
         self.jpeg_quality = jpeg_quality
+        self.model_name = model_name
         self.running = False
         self.thread: threading.Thread | None = None
         self.lock = threading.Lock()
@@ -92,21 +109,34 @@ class VideoStreamWorker:
         with self.lock:
             self.switch_source_requested = new_source
 
-    def _run_loop(self) -> None:
-        capture = cv2.VideoCapture(self.source)
-        if not capture.isOpened():
-            print(f"[ERROR] Could not open video source: {self.source}")
-            self.running = False
-            return
+    def _log_source_opened(self, opened_at: float, source: str) -> None:
+        print(
+            f"[INFO] Loaded video source in {time.perf_counter() - opened_at:.2f}s  "
+            f"model: {self.model_name or 'unknown'}  "
+            f"fps: {self.source_fps:.2f}  resolution: {self.width}x{self.height}  source: {source}"
+        )
 
-        self.width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1280
-        self.height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
-        self.source_fps = capture.get(cv2.CAP_PROP_FPS) or 20.0
-        is_file_source = not self.source.startswith("rtsp://") and not str(self.source).isdigit()
+    def _run_loop(self) -> None:
+        capture = None
+        is_file_source = False
 
         frame_count = 0
         start_time = time.perf_counter()
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+
+        if self.source:
+            opened_at = time.perf_counter()
+            capture = cv2.VideoCapture(self.source)
+            if capture.isOpened():
+                self.width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1280
+                self.height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
+                self.source_fps = capture.get(cv2.CAP_PROP_FPS) or 20.0
+                is_file_source = not self.source.startswith("rtsp://") and not str(self.source).isdigit()
+                self._log_source_opened(opened_at, self.source)
+            else:
+                print(f"[WARN] Could not open video source: {self.source}")
+                capture.release()
+                capture = None
 
         try:
             while self.running:
@@ -115,7 +145,9 @@ class VideoStreamWorker:
                     if self.switch_source_requested is not None:
                         new_target = self.switch_source_requested
                         self.switch_source_requested = None
-                        capture.release()
+                        if capture:
+                            capture.release()
+                        switch_started = time.perf_counter()
                         new_cap = cv2.VideoCapture(new_target)
                         if new_cap.isOpened():
                             capture = new_cap
@@ -125,9 +157,14 @@ class VideoStreamWorker:
                             self.height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
                             self.source_fps = capture.get(cv2.CAP_PROP_FPS) or 20.0
                             is_file_source = not self.source.startswith("rtsp://") and not str(self.source).isdigit()
+                            self._log_source_opened(switch_started, new_target)
                         else:
                             print(f"[WARN] Failed to open switched source: {new_target}")
-                            capture = cv2.VideoCapture(self.source)
+                            capture = cv2.VideoCapture(self.source) if self.source else None
+
+                if capture is None:
+                    time.sleep(0.01)
+                    continue
 
                 ok, frame = capture.read()
                 if not ok:
@@ -163,7 +200,7 @@ class VideoStreamWorker:
 
                 # Frame pacing for video files
                 if is_file_source and self.source_fps > 0:
-                    time.sleep(max(0.001, (1.0 / self.source_fps) * 0.75))
+                    time.sleep(max(0.001, (1.0 / self.source_fps) * 0.4))
         finally:
             capture.release()
 
@@ -256,6 +293,76 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
         return {"status": "ok", "filename": filename, "source": f"uploads/{filename}"}
 
 
+    @app.get("/api/cameras")
+    async def discover_cameras_endpoint(timeout: float = 3.0) -> dict[str, Any]:
+        from urllib.parse import urlparse
+
+        def _normalize(dev: dict[str, Any]) -> tuple[str | None, int | None]:
+            host = dev.get("host")
+            port = dev.get("port")
+            if not host:
+                xaddrs = dev.get("xaddrs")
+                if isinstance(xaddrs, list):
+                    xaddrs = xaddrs[0] if xaddrs else None
+                if xaddrs:
+                    try:
+                        parsed = urlparse(str(xaddrs))
+                        host, port = parsed.hostname, parsed.port
+                    except ValueError:
+                        pass
+            if not host:
+                return None, None
+            return str(host), int(port or 80)
+
+        def _run() -> list[dict[str, Any]]:
+            return discover_cameras.discover(timeout)
+
+        devices = await asyncio.get_running_loop().run_in_executor(None, _run)
+        result: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for dev in devices:
+            host, port = _normalize(dev)
+            if not host or (host, port) in seen:
+                continue
+            seen.add((host, port))
+            result.append(
+                {
+                    "host": host,
+                    "port": port,
+                    "name": dev.get("Name") or dev.get("name"),
+                }
+            )
+        return {"devices": result}
+
+    @app.post("/api/cameras/profiles")
+    async def camera_profiles(req: CameraProfilesRequest) -> dict[str, Any]:
+        def _run() -> list[dict[str, Any]]:
+            return discover_cameras.list_profiles(req.host, req.port, req.username, req.password)
+
+        try:
+            profiles = await asyncio.get_running_loop().run_in_executor(None, _run)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not load profiles: {exc}")
+
+        return {"profiles": profiles}
+
+    @app.post("/api/cameras/connect")
+    async def connect_camera(req: CameraConnectRequest) -> dict[str, Any]:
+        def _run() -> str:
+            info = discover_cameras.rtsp_uri(
+                req.host, req.port, req.username, req.password, req.profile_token
+            )
+            return source_with_credentials(info["rtsp_uri"], req.username, req.password)
+
+        try:
+            uri = await asyncio.get_running_loop().run_in_executor(None, _run)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not connect to camera: {exc}")
+
+        worker_instance.set_source(uri)
+        return {"status": "ok", "host": req.host}
+
+
     @app.get("/api/line")
     async def get_line() -> dict[str, Any]:
         line = worker_instance.counter.count_line
@@ -320,7 +427,7 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="People Counter Web Server")
-    parser.add_argument("--source", default="test1.mp4", help="Video file or RTSP stream URL")
+    parser.add_argument("--source", default=None, help="Video file or RTSP stream URL (omit to pick one from the web app)")
     parser.add_argument("--username", help="RTSP username")
     parser.add_argument("--password", help="RTSP password")
     parser.add_argument("--model", default="yolo26n.pt", help="YOLO model file")
@@ -339,7 +446,7 @@ def main() -> None:
         print("[WARN] CUDA not available, falling back to CPU.")
         device = "cpu"
 
-    source = source_with_credentials(args.source, args.username, args.password)
+    source = source_with_credentials(args.source, args.username, args.password) if args.source else ""
     initial_line = None
     line_file = args.line_file or (str(DEFAULT_LINE_FILE) if DEFAULT_LINE_FILE.exists() else None)
     if args.line or line_file:
@@ -361,6 +468,7 @@ def main() -> None:
         source=source,
         counter=counter,
         jpeg_quality=args.jpeg_quality,
+        model_name=args.model,
     )
 
     app = create_app(worker)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,6 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import cv2
 import numpy as np
-import supervision as sv
 import torch
 from ultralytics import YOLO
 
@@ -41,18 +41,18 @@ def line_orientation(line: tuple[int, int, int, int]) -> str:
 def side_of_line(point: tuple[float, float], line: tuple[int, int, int, int]) -> str:
     x, y = point
     x1, y1, x2, y2 = line
-    if abs(x2 - x1) >= abs(y2 - y1):
-        line_y = y1 if x2 == x1 else y1 + (x - x1) * (y2 - y1) / (x2 - x1)
-        return "north" if y < line_y else "south"
-    line_x = x1 if y2 == y1 else x1 + (y - y1) * (x2 - x1) / (y2 - y1)
-    return "west" if x < line_x else "east"
+    dx, dy = x2 - x1, y2 - y1
+    val = dx * (y - y1) - dy * (x - x1)
+    if abs(dx) >= abs(dy):
+        return "north" if (val < 0 if dx >= 0 else val > 0) else "south"
+    return "west" if (val > 0 if dy >= 0 else val < 0) else "east"
 
 
 def crossing_direction(
     previous: tuple[float, float],
     current: tuple[float, float],
     line: tuple[int, int, int, int],
-    ) -> str | None:
+) -> str | None:
     before = side_of_line(previous, line)
     after = side_of_line(current, line)
     if before == after:
@@ -122,7 +122,6 @@ class PeopleCounter:
         self.confidence = confidence
         self.device = device
         self.fps = fps
-        self.tracker = sv.ByteTrack()
 
         self.count_line = count_line
         self.entering_direction = entering_direction or (default_entering_direction(count_line) if count_line else None)
@@ -134,7 +133,6 @@ class PeopleCounter:
         self.last_crossing = ""
         self.last_crossing_frame = -999
         self.last_centers: dict[int, tuple[float, float]] = {}
-        self.counted_track_ids: set[int] = set()
         self.crossed_track_directions: dict[int, str] = {}
         self.track_trails: dict[int, deque[tuple[int, int]]] = {}
 
@@ -144,14 +142,12 @@ class PeopleCounter:
         self.reset_counts()
 
     def reset_counts(self) -> None:
-        self.tracker = sv.ByteTrack()
         self.in_count = 0
         self.out_count = 0
         self.current_people = 0
         self.last_crossing = ""
         self.last_crossing_frame = -999
         self.last_centers.clear()
-        self.counted_track_ids.clear()
         self.crossed_track_directions.clear()
         self.track_trails.clear()
 
@@ -174,26 +170,30 @@ class PeopleCounter:
         count_line = self.count_line
         entering_direction = self.entering_direction or default_entering_direction(count_line)
 
-        result = self.model(
+        track_fn = getattr(self.model, "track", self.model)
+        result = track_fn(
             frame,
+            persist=True,
             classes=[0],
             conf=self.confidence,
             device=self.device,
             verbose=False,
         )[0]
-        detections = self.tracker.update_with_detections(sv.Detections.from_ultralytics(result))
-        if detections.tracker_id is not None:
-            for track_id, box in zip(detections.tracker_id, detections.xyxy):
+
+        boxes = getattr(result, "boxes", None)
+        if boxes is not None and getattr(boxes, "id", None) is not None:
+            track_ids = boxes.id.int().cpu().tolist() if hasattr(boxes.id, "int") else [int(x) for x in boxes.id]
+            xyxy = boxes.xyxy.cpu().numpy() if hasattr(boxes.xyxy, "cpu") else boxes.xyxy
+            for track_id, box in zip(track_ids, xyxy):
                 track_id = int(track_id)
                 x_min, y_min, x_max, y_max = box
                 center = ((float(x_min) + float(x_max)) / 2, (float(y_min) + float(y_max)) / 2)
                 previous = self.last_centers.get(track_id)
-                if previous is not None and track_id not in self.counted_track_ids:
+                if previous is not None:
                     direction = crossing_direction(previous, center, count_line)
                     if direction:
                         self.last_crossing = direction
                         self.last_crossing_frame = self.frame_index
-                        self.counted_track_ids.add(track_id)
                         if direction == entering_direction:
                             self.in_count += 1
                         else:
@@ -248,6 +248,7 @@ class PeopleCounter:
         return annotated, self.get_counts()
 
 
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -258,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         source = source_with_credentials(args.source, args.username, args.password)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+    load_started = time.perf_counter()
     capture = cv2.VideoCapture(source)
     if not capture.isOpened():
         raise SystemExit(f"could not open source: {args.source}")
@@ -265,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = capture.get(cv2.CAP_PROP_FPS) or 20.0
+    print(f"loaded source in {time.perf_counter() - load_started:.2f}s  fps: {fps:.2f}  resolution: {width}x{height}")
     writer = cv2.VideoWriter(
         args.output,
         cv2.VideoWriter_fourcc(*"mp4v"),
@@ -295,12 +298,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        processed = 0
+        process_started = time.perf_counter()
         while True:
             ok, frame = capture.read()
             if not ok:
                 break
 
             annotated, counts = counter.process_frame(frame)
+            processed += 1
             writer.write(annotated)
             if not args.no_preview:
                 scale = min(args.display_width / width, args.display_height / height, 1.0)
@@ -318,7 +324,10 @@ def main(argv: list[str] | None = None) -> int:
         cv2.destroyAllWindows()
 
     counts = counter.get_counts()
+    elapsed = time.perf_counter() - process_started
+    measured_fps = processed / elapsed if elapsed > 0 else 0.0
     print(f"IN: {counts['in']}  OUT: {counts['out']}  CURRENT: {counts['current']}")
+    print(f"processed {processed} frames in {elapsed:.2f}s  ({measured_fps:.1f} fps, {elapsed / processed * 1000:.1f} ms/frame)")
     print(f"saved: {Path(args.output).resolve()}")
     return 0
 

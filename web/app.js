@@ -34,8 +34,6 @@
   const drawPrompt = document.getElementById('draw-prompt');
 
   const btnResetCounts = document.getElementById('btn-reset-counts');
-  const selectDirection = document.getElementById('select-direction');
-  const btnApplyDir = document.getElementById('btn-apply-dir');
 
   const selectVideoSource = document.getElementById('select-video-source');
   const btnSwitchSource = document.getElementById('btn-switch-source');
@@ -43,11 +41,224 @@
   const inputVideoFile = document.getElementById('input-video-file');
   const uploadProgressMsg = document.getElementById('upload-progress-msg');
 
+  const segButtons = document.querySelectorAll('.seg-btn');
+  const feedFile = document.getElementById('feed-file');
+  const feedCamera = document.getElementById('feed-camera');
+  const btnDiscover = document.getElementById('btn-discover');
+  const cameraStatus = document.getElementById('camera-status');
+  const cameraList = document.getElementById('camera-list');
+  const cameraCreds = document.getElementById('camera-creds');
+  const inputCameraUser = document.getElementById('input-camera-user');
+  const inputCameraPass = document.getElementById('input-camera-pass');
+  const btnCameraProfiles = document.getElementById('btn-camera-profiles');
+  const profileList = document.getElementById('profile-list');
+  const btnCameraConnect = document.getElementById('btn-camera-connect');
+
+  let selectedCamera = null;
+  let selectedProfile = null;
+  let cameraStatusTimer = null;
+
+  function setCameraStatus(msg, transient) {
+    if (!cameraStatus) return;
+    cameraStatus.textContent = msg;
+    cameraStatus.classList.remove('hidden');
+    clearTimeout(cameraStatusTimer);
+    if (transient) {
+      cameraStatusTimer = setTimeout(() => cameraStatus.classList.add('hidden'), 3500);
+    }
+  }
+
   const cfgSource = document.getElementById('cfg-source');
   const cfgRes = document.getElementById('cfg-res');
   const cfgLine = document.getElementById('cfg-line');
-  const cfgOrient = document.getElementById('cfg-orient');
-  const cfgDir = document.getElementById('cfg-dir');
+
+  function set(el, value) {
+    if (el) el.textContent = value;
+  }
+
+  const I18N = {
+    en: {
+      title: 'People Counter — Live visitor counting',
+      brandSub: 'Live visitor counts for your space',
+      source: 'Source:',
+      live: 'Live',
+      reconnecting: 'Reconnecting…',
+      connecting: 'Connecting…',
+      peopleIn: 'People in',
+      peopleOut: 'People out',
+      insideNow: 'Inside right now',
+      entered: 'entered',
+      left: 'left',
+      inSpace: 'people in the space',
+      visitorCounted: 'Visitor counted',
+      setLine: 'Set counting line',
+      saveLine: 'Save line',
+      startOver: 'Start over',
+      cancel: 'Cancel',
+      resetCounters: 'Reset counters',
+      videoFiles: 'Video files',
+      ipCamera: 'IP camera',
+      switch: 'Load',
+      uploadVideo: 'Upload video',
+      uploading: 'Uploading video…',
+      findCameras: 'Find cameras',
+      cameraUsername: 'Camera username',
+      cameraPassword: 'Camera password',
+      loadProfiles: 'Load profiles',
+      connect: 'Connect',
+      cameraHint: 'Cameras are found automatically. Use the credentials you set on the camera itself.',
+      countingSettings: 'Counting settings',
+      whichWay: 'Which way do people move when they enter?',
+      topToBottom: 'Top to bottom',
+      bottomToTop: 'Bottom to top',
+      leftToRight: 'Left to right',
+      rightToLeft: 'Right to left',
+      noLineYet: 'No line yet',
+      lineIsSet: 'Line is set',
+      saved: 'Saved',
+      setLineFirst: 'Set a counting line first.',
+      couldNotSave: 'Could not save. Try again.',
+      step1: 'Step 1: click one end of where people cross',
+      step2: 'Step 2: click the other end to finish the line',
+      lineLooksGood: 'Line looks good — tap Save line to keep it.',
+      saving: 'Saving…',
+      failedSaveLine: 'Failed to save line: {0}',
+      switching: 'Switching…',
+      failedSwitch: 'Failed to switch video: {0}',
+      uploadingFile: 'Uploading {0}...',
+      nowPlaying: 'Now playing: {0}',
+      uploadFailed: 'Upload failed: {0}',
+      scanning: 'Scanning…',
+      lookingForCameras: 'Looking for cameras on the network…',
+      noCameras: 'No cameras found. Check they are powered on and on the same network.',
+      couldNotScan: 'Could not scan: {0}',
+      camera: 'Camera',
+      loading: 'Loading…',
+      streamsOn: 'Streams on {0}: {1}',
+      couldNotLoadProfiles: 'Could not load profiles: {0}',
+      enterCreds: 'Enter the camera username and password.',
+      connecting: 'Connecting…',
+      connectedTo: 'Connected to {0}',
+      couldNotConnect: 'Could not connect: {0}',
+    },
+    fr: {
+      title: 'Compteur de personnes — Comptage de visiteurs en direct',
+      brandSub: 'Comptage en direct des visiteurs de votre espace',
+      source: 'Source :',
+      live: 'En direct',
+      reconnecting: 'Reconnexion…',
+      connecting: 'Connexion…',
+      peopleIn: 'Entrées',
+      peopleOut: 'Sorties',
+      insideNow: 'Sur place actuellement',
+      entered: 'entrées',
+      left: 'sorties',
+      inSpace: 'personnes dans l’espace',
+      visitorCounted: 'Visiteur compté',
+      setLine: 'Définir la ligne',
+      saveLine: 'Enregistrer la ligne',
+      startOver: 'Recommencer',
+      cancel: 'Annuler',
+      resetCounters: 'Remettre à zéro',
+      videoFiles: 'Fichiers vidéo',
+      ipCamera: 'Caméra IP',
+      switch: 'Charger',
+      uploadVideo: 'Importer une vidéo',
+      uploading: 'Import de la vidéo…',
+      findCameras: 'Trouver les caméras',
+      cameraUsername: 'Identifiant de la caméra',
+      cameraPassword: 'Mot de passe de la caméra',
+      loadProfiles: 'Charger les profils',
+      connect: 'Se connecter',
+      cameraHint: 'Les caméras sont trouvées automatiquement. Utilisez les identifiants définis sur la caméra elle-même.',
+      countingSettings: 'Réglages de comptage',
+      whichWay: 'Dans quel sens les personnes entrent-elles ?',
+      topToBottom: 'Du haut vers le bas',
+      bottomToTop: 'Du bas vers le haut',
+      leftToRight: 'De gauche à droite',
+      rightToLeft: 'De droite à gauche',
+      noLineYet: 'Aucune ligne',
+      lineIsSet: 'Ligne définie',
+      saved: 'Enregistré',
+      setLineFirst: 'Définissez d’abord une ligne de comptage.',
+      couldNotSave: 'Impossible d’enregistrer. Réessayez.',
+      step1: 'Étape 1 : cliquez sur une extrémité de l’endroit où les personnes passent',
+      step2: 'Étape 2 : cliquez sur l’autre extrémité pour terminer la ligne',
+      lineLooksGood: 'La ligne semble correcte — appuyez sur Enregistrer la ligne.',
+      saving: 'Enregistrement…',
+      failedSaveLine: 'Échec de l’enregistrement de la ligne : {0}',
+      switching: 'Changement…',
+      failedSwitch: 'Échec du changement de vidéo : {0}',
+      uploadingFile: 'Import de {0}...',
+      nowPlaying: 'Lecture : {0}',
+      uploadFailed: 'Échec de l’import : {0}',
+      scanning: 'Recherche…',
+      lookingForCameras: 'Recherche de caméras sur le réseau…',
+      noCameras: 'Aucune caméra trouvée. Vérifiez qu’elles sont allumées et sur le même réseau.',
+      couldNotScan: 'Recherche impossible : {0}',
+      camera: 'Caméra',
+      loading: 'Chargement…',
+      streamsOn: 'Flux sur {0} : {1}',
+      couldNotLoadProfiles: 'Impossible de charger les profils : {0}',
+      enterCreds: 'Saisissez l’identifiant et le mot de passe de la caméra.',
+      connecting: 'Connexion…',
+      connectedTo: 'Connecté à {0}',
+      couldNotConnect: 'Connexion impossible : {0}',
+    },
+  };
+
+  let currentLang = 'en';
+
+  function t(key, ...params) {
+    const str = (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key;
+    return params.reduce((acc, p, i) => acc.replace(`{${i}}`, p), str);
+  }
+
+  function applyLang() {
+    document.documentElement.lang = currentLang;
+    const toggle = document.getElementById('lang-toggle');
+    if (toggle) toggle.textContent = currentLang === 'en' ? 'FR' : 'EN';
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      set(el, t(el.dataset.i18n));
+    });
+    document.title = t('title');
+    if (cfgLine) cfgLine.textContent = currentLine ? t('lineIsSet') : t('noLineYet');
+    if (isDrawing) {
+      set(drawPrompt, !drawPoint1 ? t('step1') : (!drawPoint2 ? t('step2') : t('lineLooksGood')));
+    }
+    updateConnectionStatus();
+  }
+
+  function setupLang() {
+    const saved = localStorage.getItem('lang');
+    currentLang = saved || (navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'en');
+    applyLang();
+    const toggle = document.getElementById('lang-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        currentLang = currentLang === 'en' ? 'fr' : 'en';
+        localStorage.setItem('lang', currentLang);
+        applyLang();
+      });
+    }
+  }
+
+  const dirHint = document.getElementById('dir-hint');
+  let dirHintTimer = null;
+
+  function showDirHint(msg) {
+    if (!dirHint) return;
+    dirHint.textContent = msg;
+    dirHint.classList.remove('hidden');
+    clearTimeout(dirHintTimer);
+    dirHintTimer = setTimeout(() => dirHint.classList.add('hidden'), 2500);
+  }
+
+  function setActiveDir(value) {
+    document.querySelectorAll('.dir-btn').forEach((btn) => {
+      btn.classList.toggle('active', (btn.dataset.value || null) === (value || null));
+    });
+  }
 
   // State
   let wsVideo = null;
@@ -72,12 +283,6 @@
   // Last crossing timer
   let lastCrossingTimer = null;
 
-  function init() {
-    setupWebSockets();
-    setupDrawingEvents();
-    setupButtonEvents();
-  }
-
   // --- WebSocket Connection ---
   function getWsUrl(endpoint) {
     const loc = window.location;
@@ -94,11 +299,11 @@
   function updateConnectionStatus() {
     const connected = isVideoConnected && isCountsConnected;
     if (connected) {
-      connectionBadge.className = 'connection-status status-connected';
-      connectionText.textContent = 'Live Synced';
+      connectionBadge.className = 'status status-live';
+      connectionText.textContent = t('live');
     } else {
-      connectionBadge.className = 'connection-status status-disconnected';
-      connectionText.textContent = isVideoConnected ? 'Telemetry Reconnecting' : 'Connecting';
+      connectionBadge.className = 'status';
+      connectionText.textContent = isVideoConnected ? t('reconnecting') : t('connecting');
     }
   }
 
@@ -125,14 +330,14 @@
 
         // Exponential moving average for latency
         latencyRolling = latencyRolling === 0 ? latency : Math.round(latencyRolling * 0.8 + latency * 0.2);
-        latencyVal.textContent = `${latencyRolling} ms`;
+        set(latencyVal, `${latencyRolling} ms`);
 
         // Measure FPS
         frameCount++;
         const nowPerf = performance.now();
         if (nowPerf - lastFpsCalc >= 1000) {
           const fps = ((frameCount * 1000) / (nowPerf - lastFpsCalc)).toFixed(1);
-          fpsVal.textContent = fps;
+          set(fpsVal, fps);
           frameCount = 0;
           lastFpsCalc = nowPerf;
         }
@@ -148,7 +353,7 @@
           overlayCanvas.width = bitmap.width;
           overlayCanvas.height = bitmap.height;
           currentRes = [bitmap.width, bitmap.height];
-          cfgRes.textContent = `${bitmap.width} × ${bitmap.height}`;
+          set(cfgRes, `${bitmap.width} × ${bitmap.height}`);
         }
 
         videoCtx.drawImage(bitmap, 0, 0);
@@ -189,8 +394,7 @@
 
         // Last crossing notification
         if (data.last_crossing && data.last_crossing.trim() !== '') {
-          const formatted = data.last_crossing.replace('_to_', ' → ').toUpperCase();
-          lastCrossingText.textContent = `LAST: ${formatted}`;
+          set(lastCrossingText, t('visitorCounted'));
           lastCrossingTag.classList.remove('hidden');
 
           if (lastCrossingTimer) clearTimeout(lastCrossingTimer);
@@ -202,15 +406,16 @@
         // Active config display
         if (data.line) {
           currentLine = data.line;
-          cfgLine.textContent = `${data.line[0]}, ${data.line[1]} → ${data.line[2]}, ${data.line[3]}`;
-          const isHoriz = Math.abs(data.line[2] - data.line[0]) >= Math.abs(data.line[3] - data.line[1]);
-          cfgOrient.textContent = isHoriz ? 'Horizontal' : 'Vertical';
+          if (cfgLine) {
+            cfgLine.textContent = t('lineIsSet');
+            cfgLine.classList.add('ok');
+          }
         }
         if (data.entering_direction) {
-          cfgDir.textContent = data.entering_direction.replace(/_/g, ' ');
+          setActiveDir(data.entering_direction);
         }
         if (data.resolution && data.resolution[0] > 0) {
-          cfgRes.textContent = `${data.resolution[0]} × ${data.resolution[1]}`;
+          set(cfgRes, `${data.resolution[0]} × ${data.resolution[1]}`);
         }
       } catch (err) {
         console.error('Counts parse error:', err);
@@ -253,7 +458,7 @@
     drawActions.classList.remove('hidden');
     drawBanner.classList.remove('hidden');
     btnDrawToggle.classList.add('hidden');
-    drawPrompt.textContent = 'Click point 1 on the video to start the line';
+    drawPrompt.textContent = t('step1');
   }
 
   function stopDrawingMode() {
@@ -272,7 +477,7 @@
     currentHoverPos = null;
     btnDrawConfirm.disabled = true;
     if (isDrawing) {
-      drawPrompt.textContent = 'Click point 1 on the video to start the line';
+      drawPrompt.textContent = t('step1');
     }
     clearOverlay();
   }
@@ -294,12 +499,12 @@
 
     if (!drawPoint1) {
       drawPoint1 = coords;
-      drawPrompt.textContent = `Point 1 set (${coords.x}, ${coords.y}). Click point 2 to complete line.`;
+      drawPrompt.textContent = t('step2');
       renderOverlay();
     } else if (!drawPoint2) {
       drawPoint2 = coords;
       btnDrawConfirm.disabled = false;
-      drawPrompt.textContent = `Line ready: (${drawPoint1.x}, ${drawPoint1.y}) → (${drawPoint2.x}, ${drawPoint2.y}). Click Confirm.`;
+      drawPrompt.textContent = t('lineLooksGood');
       renderOverlay();
     }
   }
@@ -361,7 +566,7 @@
 
     try {
       btnDrawConfirm.disabled = true;
-      btnDrawConfirm.textContent = 'Saving...';
+      btnDrawConfirm.textContent = t('saving');
 
       const payload = {
         x1: drawPoint1.x,
@@ -383,9 +588,9 @@
 
       stopDrawingMode();
     } catch (err) {
-      alert(`Failed to save line: ${err.message}`);
+      alert(t('failedSaveLine', err.message));
     } finally {
-      btnDrawConfirm.textContent = 'Confirm Line';
+      btnDrawConfirm.textContent = t('saveLine');
       btnDrawConfirm.disabled = false;
     }
   }
@@ -400,38 +605,39 @@
       }
     });
 
-    btnApplyDir.addEventListener('click', async () => {
-      const selected = selectDirection.value || null;
-      if (!currentLine) {
-        alert('No counting line configured yet.');
-        return;
-      }
+    document.querySelectorAll('.dir-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const selected = btn.dataset.value || null;
+        if (!currentLine) {
+          showDirHint(t('setLineFirst'));
+          return;
+        }
 
-      try {
-        btnApplyDir.textContent = 'Applying...';
-        await fetch('/api/line', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            x1: currentLine[0],
-            y1: currentLine[1],
-            x2: currentLine[2],
-            y2: currentLine[3],
-            entering_direction: selected,
-          }),
-        });
-      } catch (err) {
-        alert(`Failed to update direction: ${err.message}`);
-      } finally {
-        btnApplyDir.textContent = 'Update Logic';
-      }
+        try {
+          await fetch('/api/line', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              x1: currentLine[0],
+              y1: currentLine[1],
+              x2: currentLine[2],
+              y2: currentLine[3],
+              entering_direction: selected,
+            }),
+          });
+          setActiveDir(selected);
+          showDirHint(t('saved'));
+        } catch (err) {
+          showDirHint(t('couldNotSave'));
+        }
+      });
     });
 
     btnSwitchSource.addEventListener('click', async () => {
       const selected = selectVideoSource.value;
       if (!selected) return;
       try {
-        btnSwitchSource.textContent = 'Switching...';
+        btnSwitchSource.textContent = t('switching');
         const resp = await fetch('/api/source', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -442,9 +648,9 @@
         const baseName = data.source.split(/[\\/]/).pop();
         cfgSource.textContent = baseName;
       } catch (err) {
-        alert(`Failed to switch video: ${err.message}`);
+        alert(t('failedSwitch', err.message));
       } finally {
-        btnSwitchSource.textContent = 'Switch Feed';
+        btnSwitchSource.textContent = t('switch');
       }
     });
 
@@ -461,7 +667,7 @@
 
       try {
         uploadProgressMsg.classList.remove('hidden');
-        uploadProgressMsg.textContent = `Uploading ${file.name}...`;
+        uploadProgressMsg.textContent = t('uploadingFile', file.name);
         btnTriggerUpload.disabled = true;
 
         const resp = await fetch('/api/upload', {
@@ -472,7 +678,7 @@
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const result = await resp.json();
 
-        uploadProgressMsg.textContent = `Active: ${result.filename}`;
+        uploadProgressMsg.textContent = t('nowPlaying', result.filename);
         setTimeout(() => {
           uploadProgressMsg.classList.add('hidden');
         }, 3000);
@@ -480,7 +686,7 @@
         await loadAvailableVideos(result.source);
         cfgSource.textContent = result.filename;
       } catch (err) {
-        alert(`Upload failed: ${err.message}`);
+        alert(t('uploadFailed', err.message));
         uploadProgressMsg.classList.add('hidden');
       } finally {
         btnTriggerUpload.disabled = false;
@@ -511,10 +717,194 @@
     }
   }
 
+  function setupFeedEvents() {
+    segButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        segButtons.forEach((b) => b.classList.toggle('active', b === btn));
+        const mode = btn.dataset.mode;
+        feedFile.classList.toggle('hidden', mode !== 'file');
+        feedCamera.classList.toggle('hidden', mode !== 'camera');
+      });
+    });
+
+    btnDiscover.addEventListener('click', async () => {
+      btnDiscover.disabled = true;
+      btnDiscover.textContent = t('scanning');
+      setCameraStatus(t('lookingForCameras'));
+      cameraList.classList.add('hidden');
+      cameraList.innerHTML = '';
+      cameraCreds.classList.add('hidden');
+      profileList.classList.add('hidden');
+      profileList.innerHTML = '';
+      selectedCamera = null;
+      selectedProfile = null;
+      try {
+        const resp = await fetch('/api/cameras');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const devices = data.devices || [];
+        if (!devices.length) {
+          setCameraStatus(t('noCameras'));
+          return;
+        }
+        cameraStatus.classList.add('hidden');
+        renderCameras(devices);
+      } catch (err) {
+        setCameraStatus(t('couldNotScan', err.message), true);
+      } finally {
+        btnDiscover.disabled = false;
+        btnDiscover.textContent = t('findCameras');
+      }
+    });
+
+    btnCameraProfiles.addEventListener('click', async () => {
+      if (!selectedCamera) return;
+      const username = inputCameraUser.value.trim();
+      const password = inputCameraPass.value;
+      if (!username || !password) {
+        setCameraStatus(t('enterCreds'), true);
+        return;
+      }
+      btnCameraProfiles.disabled = true;
+      btnCameraProfiles.textContent = t('loading');
+      try {
+        const resp = await fetch('/api/cameras/profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: selectedCamera.host,
+            port: selectedCamera.port,
+            username,
+            password,
+          }),
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => null);
+          throw new Error(data?.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        renderProfiles(data.profiles || []);
+        setCameraStatus(t('streamsOn', selectedCamera.host, (data.profiles || []).length), true);
+      } catch (err) {
+        setCameraStatus(t('couldNotLoadProfiles', err.message), true);
+      } finally {
+        btnCameraProfiles.disabled = false;
+        btnCameraProfiles.textContent = t('loadProfiles');
+      }
+    });
+
+    btnCameraConnect.addEventListener('click', async () => {
+      if (!selectedCamera || !selectedProfile) return;
+      const username = inputCameraUser.value.trim();
+      const password = inputCameraPass.value;
+      if (!username || !password) {
+        setCameraStatus(t('enterCreds'), true);
+        return;
+      }
+      btnCameraConnect.disabled = true;
+      btnCameraConnect.textContent = t('connecting');
+      try {
+        const resp = await fetch('/api/cameras/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: selectedCamera.host,
+            port: selectedCamera.port,
+            username,
+            password,
+            profile_token: selectedProfile.token,
+          }),
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => null);
+          throw new Error(data?.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        set(cfgSource, data.host);
+        setCameraStatus(t('connectedTo', data.host), true);
+        cameraCreds.classList.add('hidden');
+        cameraList.querySelectorAll('.camera-chip').forEach((c) => c.classList.remove('active'));
+        selectedCamera = null;
+        selectedProfile = null;
+        inputCameraUser.value = '';
+        inputCameraPass.value = '';
+      } catch (err) {
+        setCameraStatus(t('couldNotConnect', err.message), true);
+      } finally {
+        btnCameraConnect.disabled = false;
+        btnCameraConnect.textContent = t('connect');
+      }
+    });
+  }
+
+  function renderCameras(devices) {
+    cameraList.classList.remove('hidden');
+    devices.forEach((dev) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'camera-chip';
+      chip.innerHTML = `<span class="camera-name">${dev.name || t('camera')}</span><span class="camera-addr">${dev.host}:${dev.port}</span>`;
+      chip.addEventListener('click', () => {
+        cameraList.querySelectorAll('.camera-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedCamera = dev;
+        selectedProfile = null;
+        profileList.classList.add('hidden');
+        profileList.innerHTML = '';
+        btnCameraConnect.disabled = true;
+        cameraCreds.classList.remove('hidden');
+        inputCameraUser.focus();
+      });
+      cameraList.appendChild(chip);
+    });
+  }
+
+  function renderProfiles(profiles) {
+    profileList.innerHTML = '';
+    profileList.classList.remove('hidden');
+    profiles.forEach((p) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'profile-chip';
+      chip.textContent = p.name;
+      chip.addEventListener('click', () => {
+        profileList.querySelectorAll('.profile-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedProfile = p;
+        btnCameraConnect.disabled = false;
+      });
+      profileList.appendChild(chip);
+    });
+    const first = profileList.querySelector('.profile-chip');
+    if (first) {
+      first.classList.add('active');
+      selectedProfile = profiles[0];
+      btnCameraConnect.disabled = false;
+    }
+  }
+
+  function setupTheme() {
+    const root = document.documentElement;
+    const saved = localStorage.getItem('theme');
+    const initial = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', initial);
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+      });
+    }
+  }
+
   function init() {
+    setupTheme();
+    setupLang();
     setupWebSockets();
     setupDrawingEvents();
     setupButtonEvents();
+    setupFeedEvents();
     loadAvailableVideos();
   }
 

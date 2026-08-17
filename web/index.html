@@ -3,208 +3,224 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VisionCounter — Real-Time Spatial Analytics</title>
+  <title data-i18n="title">People Counter — Live visitor counting</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 -->
-  <div class="workspace">
-    <!-- Top Hardware Control Deck -->
-    <header class="deck-header">
-      <div class="brand-cluster">
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
         <div class="brand-mark" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
-            <line x1="4" y1="22" x2="4" y2="15"></line>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"></circle>
+            <path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"></path>
           </svg>
         </div>
         <div>
-          <h1 class="brand-name">VisionCounter<span class="system-tag">SYS.01</span></h1>
-          <p class="brand-meta">Edge Inference & Spatial Line-Crossing</p>
+          <h1 class="brand-name">People Counter</h1>
+          <p class="brand-sub" data-i18n="brandSub">Live visitor counts for your space</p>
         </div>
       </div>
-
-      <div class="deck-status">
-        <div class="telemetry-chip">
-          <span class="chip-key">FEED</span>
-          <span id="cfg-source" class="chip-val">test1.mp4</span>
-        </div>
-        <div class="telemetry-chip">
-          <span class="chip-key">LATENCY</span>
-          <span id="latency-val" class="chip-val chip-mono">-- ms</span>
-        </div>
-        <div class="telemetry-chip">
-          <span class="chip-key">RATE</span>
-          <span id="fps-val" class="chip-val chip-mono">-- fps</span>
-        </div>
-        <div id="connection-badge" class="connection-status status-disconnected">
-          <span class="status-indicator"></span>
-          <span id="connection-text">Connecting</span>
-        </div>
+      <div class="topbar-right">
+        <span class="source-chip"><span data-i18n="source">Source:</span> <strong id="cfg-source">test1.mp4</strong></span>
+        <span id="connection-badge" class="status">
+          <span class="status-dot"></span>
+          <span id="connection-text">Connecting…</span>
+        </span>
+        <button id="lang-toggle" class="lang-toggle" type="button" aria-label="Language" title="Language">FR</button>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light or dark mode" title="Toggle light or dark mode">
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+          </svg>
+        </button>
       </div>
     </header>
 
-    <!-- Main Operational Workspace -->
-    <main class="workbench-grid">
-      <!-- Primary Viewport Column -->
-      <section class="viewport-stage">
-        <!-- Live Counters Bar -->
-        <div class="metrics-ribbon">
-          <div class="metric-block metric-in">
-            <span class="metric-tag">INFLOW</span>
-            <div class="metric-readout">
-              <span id="stat-in-val" class="number">0</span>
-              <span class="unit">ENTRIES</span>
-            </div>
-          </div>
-          <div class="metric-block metric-out">
-            <span class="metric-tag">OUTFLOW</span>
-            <div class="metric-readout">
-              <span id="stat-out-val" class="number">0</span>
-              <span class="unit">EXITS</span>
-            </div>
-          </div>
-          <div class="metric-block metric-occupancy">
-            <span class="metric-tag">NET OCCUPANCY</span>
-            <div class="metric-readout">
-              <span id="stat-current-val" class="number">0</span>
-              <span class="unit">ACTIVE</span>
-            </div>
-          </div>
+    <section class="metrics">
+      <article class="metric">
+        <div class="metric-head">
+          <span class="metric-badge badge-in" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 4v11"></path>
+              <path d="M7 11l5 5 5-5"></path>
+            </svg>
+          </span>
+          <span class="metric-label" data-i18n="peopleIn">People in</span>
         </div>
+        <strong id="stat-in-val" class="metric-value value-in">0</strong>
+        <span class="metric-sub" data-i18n="entered">entered</span>
+      </article>
 
-        <!-- Video Canvas Chamber -->
+      <article class="metric">
+        <div class="metric-head">
+          <span class="metric-badge badge-out" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20V9"></path>
+              <path d="M7 13l5-5 5 5"></path>
+            </svg>
+          </span>
+          <span class="metric-label" data-i18n="peopleOut">People out</span>
+        </div>
+        <strong id="stat-out-val" class="metric-value value-out">0</strong>
+        <span class="metric-sub" data-i18n="left">left</span>
+      </article>
+
+      <article class="metric">
+        <div class="metric-head">
+          <span class="metric-badge badge-current" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="7" r="3.5"></circle>
+              <path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5"></path>
+            </svg>
+          </span>
+          <span class="metric-label" data-i18n="insideNow">Inside right now</span>
+        </div>
+        <strong id="stat-current-val" class="metric-value value-current">0</strong>
+        <span class="metric-sub" data-i18n="inSpace">people in the space</span>
+      </article>
+    </section>
+
+    <main class="layout">
+      <section class="video-area">
         <div class="video-chamber" id="video-wrapper">
           <canvas id="video-canvas"></canvas>
           <canvas id="overlay-canvas"></canvas>
 
-          <!-- Crossing Alert HUD -->
-          <div id="last-crossing-tag" class="crossing-hud hidden" role="status">
-            <span class="crossing-beacon"></span>
-            <span id="last-crossing-text">Crossing Logged</span>
+          <div id="last-crossing-tag" class="crossing-toast hidden" role="status">
+            <span class="crossing-dot"></span>
+            <span id="last-crossing-text" data-i18n="visitorCounted">Visitor counted</span>
           </div>
 
-          <!-- Drawing Mode Floating Banner -->
-          <div id="draw-banner" class="draw-toast hidden">
-            <span class="toast-step">CALIBRATION</span>
-            <span id="draw-prompt">Click point 1 on the video frame</span>
+          <div id="draw-banner" class="draw-hint hidden">
+            <span id="draw-prompt" data-i18n="step1">Step 1: click one end of where people cross</span>
           </div>
         </div>
 
-        <!-- Precision Tool Ribbon -->
-        <div class="control-ribbon">
+        <div class="video-controls">
           <div class="action-cluster">
-            <button id="btn-draw-toggle" class="btn btn-calibrate">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="btn-draw-toggle" class="btn btn-dark">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 20h9"></path>
                 <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
               </svg>
-              <span>Calibrate Line</span>
+              <span data-i18n="setLine">Set counting line</span>
             </button>
 
-            <div id="draw-actions" class="calibration-actions hidden">
-              <button id="btn-draw-confirm" class="btn btn-commit" disabled>Commit Line</button>
-              <button id="btn-draw-reset" class="btn btn-hollow">Clear</button>
-              <button id="btn-draw-cancel" class="btn btn-ghost">Cancel</button>
+            <div id="draw-actions" class="draw-actions hidden">
+              <button id="btn-draw-confirm" class="btn btn-success" disabled data-i18n="saveLine">Save line</button>
+              <button id="btn-draw-reset" class="btn" data-i18n="startOver">Start over</button>
+              <button id="btn-draw-cancel" class="btn btn-ghost" data-i18n="cancel">Cancel</button>
             </div>
           </div>
 
-          <div class="utility-cluster">
-            <button id="btn-reset-counts" class="btn btn-hollow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              <span>Zero Counters</span>
-            </button>
-          </div>
+          <button id="btn-reset-counts" class="btn btn-ghost">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            <span data-i18n="resetCounters">Reset counters</span>
+          </button>
         </div>
       </section>
 
-      <!-- Right Telemetry & Control Column -->
-      <aside class="telemetry-panel">
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2 class="panel-heading">VIDEO FEED SOURCE</h2>
-            <span class="panel-sub">Stream Input</span>
+      <aside class="settings">
+        <div class="setting-group">
+          <div class="group-head">
+            <h2>Video feed</h2>
           </div>
-          <div class="direction-form">
+
+          <div class="seg" role="tablist" aria-label="Feed type">
+            <button type="button" class="seg-btn active" data-mode="file" data-i18n="videoFiles">Video files</button>
+            <button type="button" class="seg-btn" data-mode="camera" data-i18n="ipCamera">IP camera</button>
+          </div>
+
+          <div id="feed-file" class="feed-body">
             <select id="select-video-source" class="control-select">
               <option value="test1.mp4">test1.mp4</option>
             </select>
-            <div class="btn-group-row">
-              <button id="btn-switch-source" class="btn btn-hollow flex-1">Switch Feed</button>
-              <button id="btn-trigger-upload" class="btn btn-hollow flex-1">Upload File</button>
+            <div class="button-row">
+              <button id="btn-switch-source" class="btn flex-1" data-i18n="switch">Switch</button>
+              <button id="btn-trigger-upload" class="btn flex-1" data-i18n="uploadVideo">Upload video</button>
               <input type="file" id="input-video-file" accept=".mp4,.avi,.mov,.mkv,.webm" class="hidden" />
             </div>
-            <div id="upload-progress-msg" class="upload-hint hidden">Uploading video...</div>
+            <div id="upload-progress-msg" class="upload-note hidden" data-i18n="uploading">Uploading video…</div>
+          </div>
+
+          <div id="feed-camera" class="feed-body hidden">
+            <button id="btn-discover" class="btn btn-block" data-i18n="findCameras">Find cameras</button>
+            <p id="camera-status" class="camera-status hidden"></p>
+            <div id="camera-list" class="camera-list hidden"></div>
+            <div id="camera-creds" class="creds hidden">
+              <label class="field-label" for="input-camera-user" data-i18n="cameraUsername">Camera username</label>
+              <input id="input-camera-user" class="control-input" type="text" autocomplete="username" placeholder="admin" />
+              <label class="field-label" for="input-camera-pass" data-i18n="cameraPassword">Camera password</label>
+              <input id="input-camera-pass" class="control-input" type="password" autocomplete="current-password" />
+              <button id="btn-camera-profiles" class="btn" data-i18n="loadProfiles">Load profiles</button>
+              <div id="profile-list" class="profile-list hidden"></div>
+              <button id="btn-camera-connect" class="btn btn-dark btn-block" disabled data-i18n="connect">Connect</button>
+            </div>
+            <p class="feed-hint" data-i18n="cameraHint">Cameras are found automatically. Use the credentials you set on the camera itself.</p>
           </div>
         </div>
 
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2 class="panel-heading">CALIBRATION GEOMETRY</h2>
-            <span class="panel-sub">Active Line</span>
+        <div class="setting-group">
+          <div class="group-head">
+            <h2 data-i18n="countingSettings">Counting settings</h2>
+            <span id="cfg-line" class="line-pill">No line yet</span>
           </div>
-          <div class="geo-readout">
-            <div class="geo-row">
-              <span class="geo-key">Coordinates</span>
-              <span id="cfg-line" class="geo-val">--</span>
-            </div>
-            <div class="geo-row">
-              <span class="geo-key">Orientation</span>
-              <span id="cfg-orient" class="geo-val">--</span>
-            </div>
-            <div class="geo-row">
-              <span class="geo-key">Inflow Heading</span>
-              <span id="cfg-dir" class="geo-val">--</span>
-            </div>
-            <div class="geo-row">
-              <span class="geo-key">Resolution</span>
-              <span id="cfg-res" class="geo-val">--</span>
-            </div>
-          </div>
-        </div>
 
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2 class="panel-heading">DIRECTION LOGIC</h2>
-            <span class="panel-sub">Inflow Rule</span>
-          </div>
-          <div class="direction-form">
-            <select id="select-direction" class="control-select">
-              <option value="">Auto (Orthogonal default)</option>
-              <option value="north_to_south">North → South (Downwards)</option>
-              <option value="south_to_north">South → North (Upwards)</option>
-              <option value="west_to_east">West → East (Rightwards)</option>
-              <option value="east_to_west">East → West (Leftwards)</option>
-            </select>
-            <button id="btn-apply-dir" class="btn btn-hollow btn-block">Update Logic</button>
-          </div>
-        </div>
+          <p class="field-label" data-i18n="whichWay">Which way do people move when they enter?</p>
 
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2 class="panel-heading">PIPELINE TELEMETRY</h2>
-            <span class="panel-sub">Stream Architecture</span>
+          <div class="dir-grid">
+            <button type="button" class="dir-btn" data-value="north_to_south">
+              <span class="dir-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 5v14"></path>
+                  <path d="M6 13l6 6 6-6"></path>
+                </svg>
+              </span>
+              <span data-i18n="topToBottom">Top to bottom</span>
+            </button>
+
+            <button type="button" class="dir-btn" data-value="south_to_north">
+              <span class="dir-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 19V5"></path>
+                  <path d="M6 11l6-6 6 6"></path>
+                </svg>
+              </span>
+              <span data-i18n="bottomToTop">Bottom to top</span>
+            </button>
+
+            <button type="button" class="dir-btn" data-value="west_to_east">
+              <span class="dir-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 12h16"></path>
+                  <path d="M13 5l7 7-7 7"></path>
+                </svg>
+              </span>
+              <span data-i18n="leftToRight">Left to right</span>
+            </button>
+
+            <button type="button" class="dir-btn" data-value="east_to_west">
+              <span class="dir-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 12H4"></path>
+                  <path d="M11 5l-7 7 7 7"></path>
+                </svg>
+              </span>
+              <span data-i18n="rightToLeft">Right to left</span>
+            </button>
           </div>
-          <ul class="spec-list">
-            <li class="spec-item">
-              <span>Transport</span>
-              <span class="spec-value">Binary WS (MJPEG)</span>
-            </li>
-            <li class="spec-item">
-              <span>Hardware Pacing</span>
-              <span class="spec-value">Zero-Backlog Loop</span>
-            </li>
-            <li class="spec-item">
-              <span>Decoder</span>
-              <span class="spec-value">createImageBitmap</span>
-            </li>
-          </ul>
+
+          <p id="dir-hint" class="dir-hint hidden"></p>
         </div>
       </aside>
     </main>
@@ -213,4 +229,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-
