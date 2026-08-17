@@ -2,7 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from unittest.mock import MagicMock
+
 from src.count_people import (
+    PeopleCounter,
     build_parser,
     crossing_direction,
     current_people_after_crossing,
@@ -55,6 +58,19 @@ class CountPeopleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             line_from_args((1, 2, 3, 4), "line.txt", 100, 200)
 
+    def test_people_counter_interface(self):
+        mock_model = MagicMock()
+        counter = PeopleCounter(
+            model=mock_model,
+            count_line=(0, 100, 200, 100),
+            entering_direction="north_to_south",
+        )
+        self.assertEqual(counter.get_counts(), {"in": 0, "out": 0, "current": 0, "last_crossing": "", "frame_index": 0})
+        counter.set_line(100, 0, 100, 200)
+        self.assertEqual(counter.count_line, (100, 0, 100, 200))
+        self.assertEqual(counter.entering_direction, "west_to_east")
+
 
 if __name__ == "__main__":
     unittest.main()
+

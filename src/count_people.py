@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
+
+import cv2
+import numpy as np
+import supervision as sv
+import torch
+from ultralytics import YOLO
 
 
 def parse_line(value: str) -> tuple[int, int, int, int]:
@@ -44,7 +52,7 @@ def crossing_direction(
     previous: tuple[float, float],
     current: tuple[float, float],
     line: tuple[int, int, int, int],
-) -> str | None:
+    ) -> str | None:
     before = side_of_line(previous, line)
     after = side_of_line(current, line)
     if before == after:
@@ -98,14 +106,150 @@ def source_with_credentials(source: str, username: str | None, password: str | N
     return urlunsplit((parsed.scheme, f"{quote(username)}:{quote(password)}@{host}", parsed.path, parsed.query, parsed.fragment))
 
 
+class PeopleCounter:
+    """Manages tracking and line-crossing counting on video frames."""
+
+    def __init__(
+        self,
+        model: str | Any = "yolo26n.pt",
+        confidence: float = 0.35,
+        device: str = "cuda",
+        count_line: tuple[int, int, int, int] | None = None,
+        entering_direction: str | None = None,
+        fps: float = 20.0,
+    ) -> None:
+        self.model = YOLO(model) if isinstance(model, str) else model
+        self.confidence = confidence
+        self.device = device
+        self.fps = fps
+        self.tracker = sv.ByteTrack()
+
+        self.count_line = count_line
+        self.entering_direction = entering_direction or (default_entering_direction(count_line) if count_line else None)
+
+        self.in_count = 0
+        self.out_count = 0
+        self.current_people = 0
+        self.frame_index = 0
+        self.last_crossing = ""
+        self.last_crossing_frame = -999
+        self.last_centers: dict[int, tuple[float, float]] = {}
+        self.counted_track_ids: set[int] = set()
+        self.crossed_track_directions: dict[int, str] = {}
+        self.track_trails: dict[int, deque[tuple[int, int]]] = {}
+
+    def set_line(self, x1: int, y1: int, x2: int, y2: int, entering_direction: str | None = None) -> None:
+        self.count_line = (x1, y1, x2, y2)
+        self.entering_direction = entering_direction or default_entering_direction(self.count_line)
+        self.reset_counts()
+
+    def reset_counts(self) -> None:
+        self.tracker = sv.ByteTrack()
+        self.in_count = 0
+        self.out_count = 0
+        self.current_people = 0
+        self.last_crossing = ""
+        self.last_crossing_frame = -999
+        self.last_centers.clear()
+        self.counted_track_ids.clear()
+        self.crossed_track_directions.clear()
+        self.track_trails.clear()
+
+    def get_counts(self) -> dict[str, Any]:
+        return {
+            "in": self.in_count,
+            "out": self.out_count,
+            "current": self.current_people,
+            "last_crossing": self.last_crossing,
+            "frame_index": self.frame_index,
+        }
+
+    def process_frame(self, frame: Any) -> tuple[Any, dict[str, Any]]:
+        annotated = frame.copy()
+        height, width = frame.shape[:2]
+
+        if self.count_line is None:
+            self.set_line(width // 2, 0, width // 2, height, self.entering_direction)
+
+        count_line = self.count_line
+        entering_direction = self.entering_direction or default_entering_direction(count_line)
+
+        result = self.model(
+            frame,
+            classes=[0],
+            conf=self.confidence,
+            device=self.device,
+            verbose=False,
+        )[0]
+        detections = self.tracker.update_with_detections(sv.Detections.from_ultralytics(result))
+        if detections.tracker_id is not None:
+            for track_id, box in zip(detections.tracker_id, detections.xyxy):
+                track_id = int(track_id)
+                x_min, y_min, x_max, y_max = box
+                center = ((float(x_min) + float(x_max)) / 2, (float(y_min) + float(y_max)) / 2)
+                previous = self.last_centers.get(track_id)
+                if previous is not None and track_id not in self.counted_track_ids:
+                    direction = crossing_direction(previous, center, count_line)
+                    if direction:
+                        self.last_crossing = direction
+                        self.last_crossing_frame = self.frame_index
+                        self.counted_track_ids.add(track_id)
+                        if direction == entering_direction:
+                            self.in_count += 1
+                        else:
+                            self.out_count += 1
+                        self.current_people = current_people_after_crossing(
+                            self.current_people, direction, entering_direction
+                        )
+                        self.crossed_track_directions[track_id] = direction
+                self.last_centers[track_id] = center
+                trail = self.track_trails.setdefault(track_id, deque(maxlen=30))
+                trail.append((int(center[0]), int(center[1])))
+
+                direction = self.crossed_track_directions.get(track_id)
+                color = (0, 220, 0) if direction == entering_direction else ((0, 0, 255) if direction else (255, 180, 0))
+
+                if len(trail) > 1:
+                    cv2.polylines(annotated, [np.array(trail, dtype=np.int32)], False, color, 2)
+                x_min, y_min, x_max, y_max = map(int, box)
+                cv2.rectangle(annotated, (x_min, y_min), (x_max, y_max), color, 2)
+                cv2.putText(
+                    annotated,
+                    f"person #{track_id}",
+                    (x_min, max(20, y_min - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    color,
+                    2,
+                )
+
+        x1, y1, x2, y2 = count_line
+        cv2.line(annotated, (x1, y1), (x2, y2), (0, 255, 255), 2)
+        cv2.putText(
+            annotated,
+            f"IN: {self.in_count}  OUT: {self.out_count}  CURRENT: {self.current_people}",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 0),
+            2,
+        )
+        if self.frame_index - self.last_crossing_frame < int(self.fps * 2):
+            cv2.putText(
+                annotated,
+                f"last: {self.last_crossing}",
+                (20, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 255),
+                2,
+            )
+        self.frame_index += 1
+        return annotated, self.get_counts()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-
-    import cv2
-    import numpy as np
-    import supervision as sv
-    import torch
-    from ultralytics import YOLO
 
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise SystemExit("CUDA was requested but no usable NVIDIA GPU is available in this Python environment")
@@ -131,8 +275,6 @@ def main(argv: list[str] | None = None) -> int:
         capture.release()
         raise SystemExit(f"could not open output: {args.output}")
 
-    model = YOLO(args.model)
-    tracker = sv.ByteTrack()
     try:
         x1, y1, x2, y2 = line_from_args(args.line, args.line_file, width, height)
     except (OSError, ValueError, argparse.ArgumentTypeError) as exc:
@@ -142,16 +284,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"line: {x1},{y1},{x2},{y2}")
     print(f"line orientation: {line_orientation(count_line)}")
     print(f"entering direction: {entering_direction}")
-    in_count = 0
-    out_count = 0
-    current_people = 0
-    frame_index = 0
-    last_crossing = ""
-    last_crossing_frame = -999
-    last_centers: dict[int, tuple[float, float]] = {}
-    counted_track_ids: set[int] = set()
-    crossed_track_directions: dict[int, str] = {}
-    track_trails: dict[int, list[tuple[int, int]]] = {}
+
+    counter = PeopleCounter(
+        model=args.model,
+        confidence=args.confidence,
+        device=args.device,
+        count_line=count_line,
+        entering_direction=entering_direction,
+        fps=fps,
+    )
 
     try:
         while True:
@@ -159,99 +300,29 @@ def main(argv: list[str] | None = None) -> int:
             if not ok:
                 break
 
-            result = model(
-                frame,
-                classes=[0],
-                conf=args.confidence,
-                device=args.device,
-                verbose=False,
-            )[0]
-            detections = tracker.update_with_detections(sv.Detections.from_ultralytics(result))
-            if detections.tracker_id is not None:
-                for track_id, box in zip(detections.tracker_id, detections.xyxy):
-                    track_id = int(track_id)
-                    x_min, y_min, x_max, y_max = box
-                    center = ((float(x_min) + float(x_max)) / 2, (float(y_min) + float(y_max)) / 2)
-                    previous = last_centers.get(track_id)
-                    if previous is not None and track_id not in counted_track_ids:
-                        direction = crossing_direction(previous, center, count_line)
-                        if direction:
-                            last_crossing = direction
-                            last_crossing_frame = frame_index
-                            counted_track_ids.add(track_id)
-                            if direction == entering_direction:
-                                in_count += 1
-                            else:
-                                out_count += 1
-                            current_people = current_people_after_crossing(current_people, direction, entering_direction)
-                            crossed_track_directions[track_id] = direction
-                    last_centers[track_id] = center
-                    center_point = (int(center[0]), int(center[1]))
-                    trail = track_trails.setdefault(track_id, [])
-                    trail.append(center_point)
-                    del trail[:-30]
-
-                    direction = crossed_track_directions.get(track_id)
-                    if direction == entering_direction:
-                        color = (0, 220, 0)
-                    elif direction:
-                        color = (0, 0, 255)
-                    else:
-                        color = (255, 180, 0)
-
-                    points = track_trails[track_id]
-                    if len(points) > 1:
-                        cv2.polylines(frame, [np.array(points, dtype=np.int32)], False, color, 2)
-                    x_min, y_min, x_max, y_max = (int(value) for value in box)
-                    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color, 2)
-                    cv2.putText(
-                        frame,
-                        f"person #{track_id}",
-                        (x_min, max(20, y_min - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        color,
-                        2,
-                    )
-            cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
-            cv2.putText(
-                frame,
-                f"IN: {in_count}  OUT: {out_count}  CURRENT: {current_people}",
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                2,
-            )
-            if frame_index - last_crossing_frame < int(fps * 2):
-                cv2.putText(
-                    frame,
-                    f"last: {last_crossing}",
-                    (20, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 255, 255),
-                    2,
-                )
-            writer.write(frame)
+            annotated, counts = counter.process_frame(frame)
+            writer.write(annotated)
             if not args.no_preview:
                 scale = min(args.display_width / width, args.display_height / height, 1.0)
-                preview = frame if scale == 1.0 else cv2.resize(
-                    frame, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA
+                preview = (
+                    annotated
+                    if scale == 1.0
+                    else cv2.resize(annotated, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
                 )
                 cv2.imshow("People Counter", preview)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-            frame_index += 1
     finally:
         capture.release()
         writer.release()
         cv2.destroyAllWindows()
 
-    print(f"IN: {in_count}  OUT: {out_count}  CURRENT: {current_people}")
+    counts = counter.get_counts()
+    print(f"IN: {counts['in']}  OUT: {counts['out']}  CURRENT: {counts['current']}")
     print(f"saved: {Path(args.output).resolve()}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

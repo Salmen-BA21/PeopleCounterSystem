@@ -1,163 +1,156 @@
 # People Count System
 
-Detect and count people crossing a line in a video file or RTSP camera stream.
+Real-time people detection, tracking, and bidirectional line-crossing counting with both a **Web Dashboard UI** and a **CLI tool**. Supports local video files and RTSP IP camera streams.
 
-The app uses:
+---
 
-- Ultralytics YOLO for person detection
-- Supervision ByteTrack for tracking people between frames
-- OpenCV for video input, preview, drawing, and output video writing
-- PyTorch CUDA when `--device cuda` is used
+## ⚡ Features
 
-## Project Layout
+- **Ultralytics YOLO** for person detection.
+- **Supervision ByteTrack** for robust multi-object tracking.
+- **Directional Crossing Logic**: Automatically detects crossing vectors (`north_to_south`, `south_to_north`, `west_to_east`, `east_to_west`) and tracks `IN`, `OUT`, and net `CURRENT` occupancy.
+- **Real-Time Web Dashboard**:
+  - Low-latency binary MJPEG video streaming via WebSockets (`/ws/video`).
+  - High-frequency telemetry feed via WebSockets (`/ws/counts`).
+  - Interactive click-and-drag counting line adjustment directly on the browser canvas.
+  - Video selector and drag-and-drop video uploader.
+  - Counter reset and hot-switching video sources without restarting the server.
+- **Hardware Acceleration**: Automatic PyTorch CUDA GPU acceleration with CPU fallback.
+- **ONVIF / RTSP Integration**: Discover network cameras and extract RTSP stream endpoints.
+
+---
+
+## 📂 Project Layout
 
 ```text
-src/count_people.py       Count people crossing a line
-src/pick_line.py          Click two points on a frame and save line.txt
-src/discover_cameras.py   Discover ONVIF cameras or get an RTSP URI
-tests/                    Small unit tests
-line.txt                  Saved counting line: x1,y1,x2,y2
-test1.mp4                 Local test video
+├── src/
+│   ├── count_people.py       # Core PeopleCounter pipeline & CLI tool
+│   ├── server.py             # FastAPI backend with WebSockets & REST API
+│   ├── pick_line.py          # OpenCV GUI helper to click points and save line.txt
+│   └── discover_cameras.py   # ONVIF camera discovery & RTSP URI resolver
+├── web/                      # Web frontend (HTML5 / Vanilla CSS / Vanilla JS)
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+├── tests/                    # Unit and integration test suites
+│   ├── test_count_people.py
+│   └── test_server.py
+├── uploads/                  # Uploaded videos storage directory
+├── line.txt                  # Saved counting line: x1,y1,x2,y2
+├── test1.mp4                 # Sample test video
+└── requirements.txt          # Python dependencies
 ```
 
-## Setup
+---
 
-From the project folder:
+## 🚀 Getting Started
+
+### 1. Setup Environment
+
+Activate the virtual environment and install dependencies:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-If you want CUDA acceleration, make sure PyTorch in `.venv` sees your GPU:
+Verify GPU acceleration (optional):
 
 ```powershell
-.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+.venv\Scripts\python.exe -c "import torch; print('CUDA Available:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
-Expected result on this machine:
+---
 
-```text
-True
-NVIDIA GeForce RTX 4060 Laptop GPU
-```
+## 🌐 Web Dashboard (Recommended)
 
-## Pick A Counting Line
-
-Click two points on a video frame:
+Launch the FastAPI web server:
 
 ```powershell
-.venv\Scripts\python.exe -m src.pick_line test1.mp4 --output line.txt
+.venv\Scripts\python.exe -m src.server --source test1.mp4 --device cuda
 ```
 
-Controls:
+Open your browser at:
+👉 **[http://localhost:8000](http://localhost:8000)**
 
-- Left click: choose line points
-- `r`: reset clicks
-- `q`: save after two clicks
+### Web Server Options
 
-The saved file looks like:
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `--source` | `test1.mp4` | Video file path or RTSP URL (`rtsp://...`) |
+| `--device` | `cuda` | Inference device (`cuda` or `cpu`) |
+| `--confidence` | `0.35` | YOLO detection confidence threshold |
+| `--model` | `yolo26n.pt` | YOLO weights path or model name |
+| `--port` | `8000` | Web server port |
+| `--line` | `None` | Initial line coordinates `x1,y1,x2,y2` |
+| `--line-file` | `line.txt` | Path to line configuration file |
+| `--jpeg-quality`| `75` | MJPEG video streaming compression quality |
 
-```text
-178,222,399,224
-```
+---
 
-## Count People In A Video
+## 💻 CLI Usage
 
-Run with CUDA:
+### Count People in a Video
 
+Run with GPU:
 ```powershell
 .venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --output counted_test1.mp4 --device cuda
 ```
 
-Run with CPU:
+Run with CPU / Headless:
+```powershell
+.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --output counted_test1.mp4 --device cpu --no-preview
+```
+
+### Pick a Counting Line via OpenCV Tool
 
 ```powershell
-.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --output counted_test1.mp4 --device cpu
+.venv\Scripts\python.exe -m src.pick_line test1.mp4 --output line.txt
 ```
+* **Left click**: select point 1 and point 2.
+* **`r`**: reset points.
+* **`q`**: save and exit.
 
-Run without the preview window:
+---
+
+## 🧭 Entering & Leaving Direction
+
+The system identifies which side of the line a tracked person crossed:
+
+- **Horizontal lines**: `north_to_south` (default IN) / `south_to_north`
+- **Vertical lines**: `west_to_east` (default IN) / `east_to_west`
+
+Override the IN direction if your camera angle requires it:
 
 ```powershell
-.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --output counted_test1.mp4 --device cuda --no-preview
+.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --entering-direction south_to_north
 ```
 
-Press `q` in the preview window to stop early.
+---
 
-## Entering And Leaving Direction
+## 📹 RTSP & ONVIF Cameras
 
-The app determines which side of the line a person was on before and after crossing.
-
-For a mostly horizontal line:
-
-- `north_to_south`
-- `south_to_north`
-
-For a mostly vertical line:
-
-- `west_to_east`
-- `east_to_west`
-
-Default `IN` direction:
-
-- horizontal line: `north_to_south`
-- vertical line: `west_to_east`
-
-Override it if your camera is reversed:
-
-```powershell
-.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --output counted_test1.mp4 --device cuda --entering-direction south_to_north
-```
-
-At startup, the app prints:
-
-```text
-line: 178,222,399,224
-line orientation: horizontal
-entering direction: north_to_south
-```
-
-The video overlay shows `IN`, `OUT`, and the most recent crossing direction.
-
-## RTSP Camera Usage
-
-If you already know the RTSP URL:
-
+### Run with an RTSP Camera Stream
 ```powershell
 .venv\Scripts\python.exe -m src.count_people --source "rtsp://192.168.1.23:554/profile1" --username admin --password "p@ss" --line-file line.txt --device cuda
 ```
 
-Discover ONVIF cameras:
-
+### Discover ONVIF Cameras on the Network
 ```powershell
 .venv\Scripts\python.exe -m src.discover_cameras --timeout 5
 ```
 
-Get an RTSP URI from an ONVIF camera:
-
+### Resolve RTSP Stream URI from ONVIF Camera
 ```powershell
 .venv\Scripts\python.exe -m src.discover_cameras --rtsp --host 192.168.1.23 --port 80 --username admin --password "p@ss"
 ```
 
-## Tests
+---
+
+## 🧪 Running Tests
+
+Execute the test suite:
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests
 ```
-
-## Common Problems
-
-If plain `python` cannot import `torch`, use the virtual environment explicitly:
-
-```powershell
-.venv\Scripts\python.exe -m src.count_people --source test1.mp4 --line-file line.txt --device cuda
-```
-
-If CUDA fails, check:
-
-```powershell
-nvidia-smi
-.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"
-```
-
-If `IN` and `OUT` are reversed, change `--entering-direction`.

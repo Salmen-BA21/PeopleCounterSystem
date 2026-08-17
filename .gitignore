@@ -5,3 +5,5 @@ camera_counted.mp4
 yolo*.pt
 Ultralytics/
 .mp4*
+plugin_repos
+.opencode

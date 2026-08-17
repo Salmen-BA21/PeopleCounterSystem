@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisionCounter — Real-Time Spatial Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 -->
+  <div class="workspace">
+    <!-- Top Hardware Control Deck -->
+    <header class="deck-header">
+      <div class="brand-cluster">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+            <line x1="4" y1="22" x2="4" y2="15"></line>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-name">VisionCounter<span class="system-tag">SYS.01</span></h1>
+          <p class="brand-meta">Edge Inference & Spatial Line-Crossing</p>
+        </div>
+      </div>
+
+      <div class="deck-status">
+        <div class="telemetry-chip">
+          <span class="chip-key">FEED</span>
+          <span id="cfg-source" class="chip-val">test1.mp4</span>
+        </div>
+        <div class="telemetry-chip">
+          <span class="chip-key">LATENCY</span>
+          <span id="latency-val" class="chip-val chip-mono">-- ms</span>
+        </div>
+        <div class="telemetry-chip">
+          <span class="chip-key">RATE</span>
+          <span id="fps-val" class="chip-val chip-mono">-- fps</span>
+        </div>
+        <div id="connection-badge" class="connection-status status-disconnected">
+          <span class="status-indicator"></span>
+          <span id="connection-text">Connecting</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Operational Workspace -->
+    <main class="workbench-grid">
+      <!-- Primary Viewport Column -->
+      <section class="viewport-stage">
+        <!-- Live Counters Bar -->
+        <div class="metrics-ribbon">
+          <div class="metric-block metric-in">
+            <span class="metric-tag">INFLOW</span>
+            <div class="metric-readout">
+              <span id="stat-in-val" class="number">0</span>
+              <span class="unit">ENTRIES</span>
+            </div>
+          </div>
+          <div class="metric-block metric-out">
+            <span class="metric-tag">OUTFLOW</span>
+            <div class="metric-readout">
+              <span id="stat-out-val" class="number">0</span>
+              <span class="unit">EXITS</span>
+            </div>
+          </div>
+          <div class="metric-block metric-occupancy">
+            <span class="metric-tag">NET OCCUPANCY</span>
+            <div class="metric-readout">
+              <span id="stat-current-val" class="number">0</span>
+              <span class="unit">ACTIVE</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Canvas Chamber -->
+        <div class="video-chamber" id="video-wrapper">
+          <canvas id="video-canvas"></canvas>
+          <canvas id="overlay-canvas"></canvas>
+
+          <!-- Crossing Alert HUD -->
+          <div id="last-crossing-tag" class="crossing-hud hidden" role="status">
+            <span class="crossing-beacon"></span>
+            <span id="last-crossing-text">Crossing Logged</span>
+          </div>
+
+          <!-- Drawing Mode Floating Banner -->
+          <div id="draw-banner" class="draw-toast hidden">
+            <span class="toast-step">CALIBRATION</span>
+            <span id="draw-prompt">Click point 1 on the video frame</span>
+          </div>
+        </div>
+
+        <!-- Precision Tool Ribbon -->
+        <div class="control-ribbon">
+          <div class="action-cluster">
+            <button id="btn-draw-toggle" class="btn btn-calibrate">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+              <span>Calibrate Line</span>
+            </button>
+
+            <div id="draw-actions" class="calibration-actions hidden">
+              <button id="btn-draw-confirm" class="btn btn-commit" disabled>Commit Line</button>
+              <button id="btn-draw-reset" class="btn btn-hollow">Clear</button>
+              <button id="btn-draw-cancel" class="btn btn-ghost">Cancel</button>
+            </div>
+          </div>
+
+          <div class="utility-cluster">
+            <button id="btn-reset-counts" class="btn btn-hollow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              <span>Zero Counters</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Telemetry & Control Column -->
+      <aside class="telemetry-panel">
+        <div class="panel-box">
+          <div class="panel-header">
+            <h2 class="panel-heading">VIDEO FEED SOURCE</h2>
+            <span class="panel-sub">Stream Input</span>
+          </div>
+          <div class="direction-form">
+            <select id="select-video-source" class="control-select">
+              <option value="test1.mp4">test1.mp4</option>
+            </select>
+            <div class="btn-group-row">
+              <button id="btn-switch-source" class="btn btn-hollow flex-1">Switch Feed</button>
+              <button id="btn-trigger-upload" class="btn btn-hollow flex-1">Upload File</button>
+              <input type="file" id="input-video-file" accept=".mp4,.avi,.mov,.mkv,.webm" class="hidden" />
+            </div>
+            <div id="upload-progress-msg" class="upload-hint hidden">Uploading video...</div>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <div class="panel-header">
+            <h2 class="panel-heading">CALIBRATION GEOMETRY</h2>
+            <span class="panel-sub">Active Line</span>
+          </div>
+          <div class="geo-readout">
+            <div class="geo-row">
+              <span class="geo-key">Coordinates</span>
+              <span id="cfg-line" class="geo-val">--</span>
+            </div>
+            <div class="geo-row">
+              <span class="geo-key">Orientation</span>
+              <span id="cfg-orient" class="geo-val">--</span>
+            </div>
+            <div class="geo-row">
+              <span class="geo-key">Inflow Heading</span>
+              <span id="cfg-dir" class="geo-val">--</span>
+            </div>
+            <div class="geo-row">
+              <span class="geo-key">Resolution</span>
+              <span id="cfg-res" class="geo-val">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <div class="panel-header">
+            <h2 class="panel-heading">DIRECTION LOGIC</h2>
+            <span class="panel-sub">Inflow Rule</span>
+          </div>
+          <div class="direction-form">
+            <select id="select-direction" class="control-select">
+              <option value="">Auto (Orthogonal default)</option>
+              <option value="north_to_south">North → South (Downwards)</option>
+              <option value="south_to_north">South → North (Upwards)</option>
+              <option value="west_to_east">West → East (Rightwards)</option>
+              <option value="east_to_west">East → West (Leftwards)</option>
+            </select>
+            <button id="btn-apply-dir" class="btn btn-hollow btn-block">Update Logic</button>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <div class="panel-header">
+            <h2 class="panel-heading">PIPELINE TELEMETRY</h2>
+            <span class="panel-sub">Stream Architecture</span>
+          </div>
+          <ul class="spec-list">
+            <li class="spec-item">
+              <span>Transport</span>
+              <span class="spec-value">Binary WS (MJPEG)</span>
+            </li>
+            <li class="spec-item">
+              <span>Hardware Pacing</span>
+              <span class="spec-value">Zero-Backlog Loop</span>
+            </li>
+            <li class="spec-item">
+              <span>Decoder</span>
+              <span class="spec-value">createImageBitmap</span>
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
