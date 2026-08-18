@@ -1,10 +1,13 @@
+import tempfile
 import unittest
+from datetime import date
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
 from src.count_people import PeopleCounter
-from src.server import VideoStreamWorker, create_app
+from src.server import VideoStreamWorker, create_app, write_daily_csv
 
 
 class ServerTests(unittest.TestCase):
@@ -73,6 +76,19 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
         self.assertEqual(response.json()["filename"], "sample.mp4")
+
+    def test_write_daily_csv(self):
+        self.mock_counter.in_count = 12
+        self.mock_counter.out_count = 3
+        self.mock_counter.current_people = 9
+        day = date(2026, 8, 18)
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_daily_csv(self.worker, day, Path(directory))
+            self.assertEqual(path.name, "2026-08-18.csv")
+            self.assertEqual(
+                path.read_text(),
+                "date,in,out,current\n2026-08-18,12,3,9\n",
+            )
 
 
 if __name__ == "__main__":

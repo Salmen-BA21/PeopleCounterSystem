@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import os
 import struct
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,7 @@ from src import discover_cameras
 ROOT_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT_DIR / "web"
 UPLOADS_DIR = ROOT_DIR / "uploads"
+REPORTS_DIR = ROOT_DIR / "reports"
 DEFAULT_LINE_FILE = ROOT_DIR / "line.txt"
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
@@ -222,11 +225,39 @@ class VideoStreamWorker:
 worker: VideoStreamWorker | None = None
 
 
+def write_daily_csv(worker: VideoStreamWorker, day: date, reports_dir: Path = REPORTS_DIR) -> Path:
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    counts = worker.counter.get_counts()
+    path = reports_dir / f"{day.isoformat()}.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["date", "in", "out", "current"])
+        writer.writerow([day.isoformat(), counts["in"], counts["out"], counts["current"]])
+    return path
+
+
+def _seconds_until_midnight() -> float:
+    now = datetime.now()
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (midnight - now).total_seconds()
+
+
+def midnight_reset_loop(worker: VideoStreamWorker) -> None:
+    while True:
+        day = date.today()
+        time.sleep(_seconds_until_midnight() + 1.0)
+        write_daily_csv(worker, day)
+        worker.counter.reset_counts()
+        print(f"[INFO] Midnight reset — saved {day.isoformat()}.csv and reset counters")
+
+
 def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
         worker_instance.start()
+        midnight_thread = threading.Thread(target=midnight_reset_loop, args=(worker_instance,), daemon=True)
+        midnight_thread.start()
         yield
         worker_instance.stop()
 
