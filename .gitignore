@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 reports/
+sources.json
 camera_counted.mp4
 yolo*.pt
 Ultralytics/
@@ -26,3 +27,8 @@ plugin_repos
 .impeccable/live/deferred-svelte-component-accepts.json
 .impeccable/live/*.png
 # impeccable-ignore-end
+.claude
+.codex
+.cursor
+uploads/ 
+

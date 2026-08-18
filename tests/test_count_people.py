@@ -120,6 +120,41 @@ class CountPeopleTests(unittest.TestCase):
         self.assertEqual(counts3["current"], 0)
         self.assertEqual(counts3["last_crossing"], "south_to_north")
 
+    def test_stale_tracks_sweep(self):
+        import numpy as np
+
+        mock_model = MagicMock()
+        counter = PeopleCounter(
+            model=mock_model,
+            count_line=(0, 100, 200, 100),
+            entering_direction="north_to_south",
+            fps=20.0,
+        )
+        dummy_frame = np.zeros((200, 200, 3), dtype=np.uint8)
+
+        # Frame with person
+        mock_boxes = MagicMock()
+        mock_boxes.id = [1]
+        mock_boxes.xyxy = [[90, 80, 110, 100]]
+        mock_res = MagicMock()
+        mock_res.boxes = mock_boxes
+        mock_model.track.return_value = [mock_res]
+        counter.process_frame(dummy_frame)
+
+        self.assertIn(1, counter.last_centers)
+        self.assertIn(1, counter.track_trails)
+
+        # 150 empty frames — stale threshold is int(20*5)=100 frames
+        mock_empty = MagicMock()
+        mock_empty.boxes = None
+        mock_model.track.return_value = [mock_empty]
+        for _ in range(150):
+            counter.process_frame(dummy_frame)
+
+        self.assertNotIn(1, counter.last_centers)
+        self.assertNotIn(1, counter.track_trails)
+        self.assertNotIn(1, counter.last_seen)
+
 
 if __name__ == "__main__":
     unittest.main()

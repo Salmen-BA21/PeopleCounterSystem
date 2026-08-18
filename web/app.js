@@ -1,26 +1,31 @@
 /**
- * VisionCounter Frontend Application
- * High-performance WebSocket MJPEG stream rendering & interactive line drawing
+ * People Counter Frontend
+ * Multi-feed live dashboard: per-source WebSocket streams, grid tiles,
+ * focus overlay for counting-line drawing, EN/FR i18n, light/dark theme.
  */
 
 (function () {
   'use strict';
 
-  // Elements
-  const videoCanvas = document.getElementById('video-canvas');
-  const overlayCanvas = document.getElementById('overlay-canvas');
-  const videoWrapper = document.getElementById('video-wrapper');
-  const videoCtx = videoCanvas.getContext('2d');
-  const overlayCtx = overlayCanvas.getContext('2d');
+  // Shared elements
+  const feedsGrid = document.getElementById('feeds-grid');
+  const feedsEmpty = document.getElementById('feeds-empty');
 
   const connectionBadge = document.getElementById('connection-badge');
   const connectionText = document.getElementById('connection-text');
-  const latencyVal = document.getElementById('latency-val');
-  const fpsVal = document.getElementById('fps-val');
 
   const statInVal = document.getElementById('stat-in-val');
   const statOutVal = document.getElementById('stat-out-val');
   const statCurrentVal = document.getElementById('stat-current-val');
+
+  // Focus overlay elements
+  const focusVeil = document.getElementById('focus-veil');
+  const focusName = document.getElementById('focus-name');
+  const focusVideo = document.getElementById('focus-video');
+  const focusOverlay = document.getElementById('focus-overlay');
+  const focusStage = document.getElementById('focus-stage');
+  const focusVideoCtx = focusVideo.getContext('2d');
+  const focusOverlayCtx = focusOverlay.getContext('2d');
 
   const lastCrossingTag = document.getElementById('last-crossing-tag');
   const lastCrossingText = document.getElementById('last-crossing-text');
@@ -34,9 +39,12 @@
   const drawPrompt = document.getElementById('draw-prompt');
 
   const btnResetCounts = document.getElementById('btn-reset-counts');
+  const btnFocusClose = document.getElementById('btn-focus-close');
 
-  const selectVideoSource = document.getElementById('select-video-source');
-  const btnSwitchSource = document.getElementById('btn-switch-source');
+  const cfgLine = document.getElementById('cfg-line');
+  const dirHint = document.getElementById('dir-hint');
+
+  const videoListEl = document.getElementById('video-list');
   const btnTriggerUpload = document.getElementById('btn-trigger-upload');
   const inputVideoFile = document.getElementById('input-video-file');
   const uploadProgressMsg = document.getElementById('upload-progress-msg');
@@ -54,23 +62,10 @@
   const profileList = document.getElementById('profile-list');
   const btnCameraConnect = document.getElementById('btn-camera-connect');
 
-  let selectedCamera = null;
-  let selectedProfile = null;
-  let cameraStatusTimer = null;
+  const reportsList = document.getElementById('reports-list');
+  const btnReportsRefresh = document.getElementById('btn-reports-refresh');
 
-  function setCameraStatus(msg, transient) {
-    if (!cameraStatus) return;
-    cameraStatus.textContent = msg;
-    cameraStatus.classList.remove('hidden');
-    clearTimeout(cameraStatusTimer);
-    if (transient) {
-      cameraStatusTimer = setTimeout(() => cameraStatus.classList.add('hidden'), 3500);
-    }
-  }
-
-  const cfgSource = document.getElementById('cfg-source');
-  const cfgRes = document.getElementById('cfg-res');
-  const cfgLine = document.getElementById('cfg-line');
+  const tileTpl = document.getElementById('feed-tile-tpl');
 
   function set(el, value) {
     if (el) el.textContent = value;
@@ -80,7 +75,6 @@
     en: {
       title: 'People Counter — Live visitor counting',
       brandSub: 'Live visitor counts for your space',
-      source: 'Source:',
       live: 'Live',
       reconnecting: 'Reconnecting…',
       connecting: 'Connecting…',
@@ -98,9 +92,11 @@
       resetCounters: 'Reset counters',
       videoFiles: 'Video files',
       ipCamera: 'IP camera',
-      switch: 'Load',
       uploadVideo: 'Upload video',
       uploading: 'Uploading video…',
+      uploadingFile: 'Uploading {0}...',
+      uploadFailed: 'Upload failed: {0}',
+      uploaded: 'Uploaded — now counting',
       findCameras: 'Find cameras',
       cameraUsername: 'Camera username',
       cameraPassword: 'Camera password',
@@ -123,11 +119,6 @@
       lineLooksGood: 'Line looks good — tap Save line to keep it.',
       saving: 'Saving…',
       failedSaveLine: 'Failed to save line: {0}',
-      switching: 'Switching…',
-      failedSwitch: 'Failed to switch video: {0}',
-      uploadingFile: 'Uploading {0}...',
-      nowPlaying: 'Now playing: {0}',
-      uploadFailed: 'Upload failed: {0}',
       scanning: 'Scanning…',
       lookingForCameras: 'Looking for cameras on the network…',
       noCameras: 'No cameras found. Check they are powered on and on the same network.',
@@ -140,11 +131,32 @@
       connecting: 'Connecting…',
       connectedTo: 'Connected to {0}',
       couldNotConnect: 'Could not connect: {0}',
+      addFeed: 'Add a feed',
+      noFeeds: 'No feeds yet',
+      addFirstFeed: 'Add a video or camera from the panel to start counting.',
+      noVideos: 'No videos on the server yet.',
+      add: 'Add',
+      added: 'Added',
+      removeFeed: 'Remove feed',
+      removeFailed: 'Could not remove feed: {0}',
+      backToAll: 'Back to all feeds',
+      reports: 'Reports',
+      refresh: 'Refresh',
+      download: 'Download',
+      reportsEmpty: 'No reports yet. Daily totals appear here.',
+      reportMeta: '{0} in · {1} out',
+      modelLabel: 'Counting precision',
+      modelQuick: 'Quick',
+      modelPrecise: 'Precise',
+      modelFailed: 'Could not switch precision: {0}',
+      stopFeed: 'Stop',
+      playFeed: 'Play',
+      stopped: 'Stopped',
+      runFailed: 'Could not stop or play feed: {0}',
     },
     fr: {
       title: 'Compteur de personnes — Comptage de visiteurs en direct',
       brandSub: 'Comptage en direct des visiteurs de votre espace',
-      source: 'Source :',
       live: 'En direct',
       reconnecting: 'Reconnexion…',
       connecting: 'Connexion…',
@@ -162,9 +174,11 @@
       resetCounters: 'Remettre à zéro',
       videoFiles: 'Fichiers vidéo',
       ipCamera: 'Caméra IP',
-      switch: 'Charger',
       uploadVideo: 'Importer une vidéo',
       uploading: 'Import de la vidéo…',
+      uploadingFile: 'Import de {0}...',
+      uploadFailed: 'Échec de l’import : {0}',
+      uploaded: 'Importé — comptage en cours',
       findCameras: 'Trouver les caméras',
       cameraUsername: 'Identifiant de la caméra',
       cameraPassword: 'Mot de passe de la caméra',
@@ -187,11 +201,6 @@
       lineLooksGood: 'La ligne semble correcte — appuyez sur Enregistrer la ligne.',
       saving: 'Enregistrement…',
       failedSaveLine: 'Échec de l’enregistrement de la ligne : {0}',
-      switching: 'Changement…',
-      failedSwitch: 'Échec du changement de vidéo : {0}',
-      uploadingFile: 'Import de {0}...',
-      nowPlaying: 'Lecture : {0}',
-      uploadFailed: 'Échec de l’import : {0}',
       scanning: 'Recherche…',
       lookingForCameras: 'Recherche de caméras sur le réseau…',
       noCameras: 'Aucune caméra trouvée. Vérifiez qu’elles sont allumées et sur le même réseau.',
@@ -204,6 +213,28 @@
       connecting: 'Connexion…',
       connectedTo: 'Connecté à {0}',
       couldNotConnect: 'Connexion impossible : {0}',
+      addFeed: 'Ajouter un flux',
+      noFeeds: 'Aucun flux',
+      addFirstFeed: 'Ajoutez une vidéo ou une caméra depuis le panneau pour commencer le comptage.',
+      noVideos: 'Aucune vidéo sur le serveur pour l’instant.',
+      add: 'Ajouter',
+      added: 'Ajouté',
+      removeFeed: 'Retirer le flux',
+      removeFailed: 'Impossible de retirer le flux : {0}',
+      backToAll: 'Retour à tous les flux',
+      reports: 'Rapports',
+      refresh: 'Actualiser',
+      download: 'Télécharger',
+      reportsEmpty: 'Aucun rapport pour l’instant. Les totaux quotidiens apparaîtront ici.',
+      reportMeta: '{0} entrées · {1} sorties',
+      modelLabel: 'Précision du comptage',
+      modelQuick: 'Rapide',
+      modelPrecise: 'Précise',
+      modelFailed: 'Impossible de changer la précision : {0}',
+      stopFeed: 'Arrêter',
+      playFeed: 'Lire',
+      stopped: 'Arrêté',
+      runFailed: 'Impossible d\'arrêter ou de lire le flux : {0}',
     },
   };
 
@@ -214,6 +245,13 @@
     return params.reduce((acc, p, i) => acc.replace(`{${i}}`, p), str);
   }
 
+  // ---- State ----
+  const tiles = new Map(); // source_id -> tile
+  let focusedTile = null;
+  let dirHintTimer = null;
+  let cameraStatusTimer = null;
+
+  // ---- i18n ----
   function applyLang() {
     document.documentElement.lang = currentLang;
     const toggle = document.getElementById('lang-toggle');
@@ -222,10 +260,7 @@
       set(el, t(el.dataset.i18n));
     });
     document.title = t('title');
-    if (cfgLine) cfgLine.textContent = currentLine ? t('lineIsSet') : t('noLineYet');
-    if (isDrawing) {
-      set(drawPrompt, !drawPoint1 ? t('step1') : (!drawPoint2 ? t('step2') : t('lineLooksGood')));
-    }
+    updateFocusChrome();
     updateConnectionStatus();
   }
 
@@ -243,8 +278,85 @@
     }
   }
 
-  const dirHint = document.getElementById('dir-hint');
-  let dirHintTimer = null;
+  // ---- Theme ----
+  function setupTheme() {
+    const root = document.documentElement;
+    const saved = localStorage.getItem('theme');
+    const initial = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', initial);
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+      });
+    }
+  }
+
+  // ---- Master metrics ----
+  function recomputeTotals() {
+    let inCount = 0;
+    let outCount = 0;
+    let currentCount = 0;
+    tiles.forEach((tile) => {
+      inCount += tile.counts.in;
+      outCount += tile.counts.out;
+      currentCount += tile.counts.current;
+    });
+    set(statInVal, inCount);
+    set(statOutVal, outCount);
+    set(statCurrentVal, currentCount);
+  }
+
+  // ---- Connection status ----
+  function updateConnectionStatus() {
+    const total = tiles.size;
+    const connected = [...tiles.values()].filter((t) => t.videoOpen && t.countsOpen).length;
+    if (total > 0 && connected === total) {
+      connectionBadge.className = 'status status-live';
+      set(connectionText, t('live'));
+    } else if (connected > 0) {
+      connectionBadge.className = 'status';
+      set(connectionText, t('reconnecting'));
+    } else {
+      connectionBadge.className = 'status';
+      set(connectionText, t('connecting'));
+    }
+  }
+
+  function getWsUrl(endpoint) {
+    const loc = window.location;
+    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = loc.host || 'localhost:8000';
+    return `${proto}//${host}${endpoint}`;
+  }
+
+  // ---- Focus overlay chrome ----
+  function updateFocusChrome() {
+    if (!focusedTile) return;
+    const tile = focusedTile;
+    set(cfgLine, tile.line ? t('lineIsSet') : t('noLineYet'));
+    cfgLine.classList.toggle('ok', !!tile.line);
+    setActiveDir(tile.enteringDirection);
+    setActiveModel(tile.model);
+    const drawing = tile.draw.isDrawing;
+    if (drawing) {
+      set(drawPrompt, !tile.draw.p1 ? t('step1') : (!tile.draw.p2 ? t('step2') : t('lineLooksGood')));
+    }
+  }
+
+function setActiveDir(value) {
+    document.querySelectorAll('.dir-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.value === value);
+    });
+  }
+
+  function setActiveModel(value) {
+    document.querySelectorAll('.model-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.model === value);
+    });
+  }
 
   function showDirHint(msg) {
     if (!dirHint) return;
@@ -254,238 +366,291 @@
     dirHintTimer = setTimeout(() => dirHint.classList.add('hidden'), 2500);
   }
 
-  function setActiveDir(value) {
-    document.querySelectorAll('.dir-btn').forEach((btn) => {
-      btn.classList.toggle('active', (btn.dataset.value || null) === (value || null));
+  // ---- Tile factory ----
+  function createTile(src) {
+    const el = tileTpl.content.firstElementChild.cloneNode(true);
+    const tile = {
+      id: src.id,
+      name: src.name || src.id,
+      source: src.source || '',
+      counts: { in: 0, out: 0, current: 0 },
+      line: src.line || null,
+      enteringDirection: src.entering_direction || null,
+      model: src.model || 'quick',
+      running: !!src.running,
+      videoOpen: false,
+      countsOpen: false,
+      draw: { isDrawing: false, p1: null, p2: null, hover: null },
+      crossingTimer: null,
+      retry: 0,
+      el,
+      videoCanvas: el.querySelector('.tile-video'),
+      videoCtx: null,
+      nameEl: el.querySelector('.tile-name'),
+      statusEl: el.querySelector('.tile-status'),
+      statusTextEl: el.querySelector('.tile-status-text'),
+      statVals: [...el.querySelectorAll('.tile-stat-val')],
+    };
+    tile.videoCtx = tile.videoCanvas.getContext('2d');
+
+    tile.nameEl.textContent = tile.name;
+    set(tile.statusTextEl, tile.running ? t('live') : t('connecting'));
+
+    const removeBtn = el.querySelector('.tile-remove');
+    removeBtn.setAttribute('aria-label', t('removeFeed'));
+    removeBtn.title = t('removeFeed');
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTile(tile);
     });
+    const lineBtn = el.querySelector('.tile-line');
+    lineBtn.setAttribute('aria-label', t('setLine'));
+    lineBtn.title = t('setLine');
+    lineBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openFocus(tile);
+      startDrawingMode();
+    });
+    const playBtn = el.querySelector('.tile-play');
+    const playBtnIcons = { play: playBtn.querySelector('.icon-play'), pause: playBtn.querySelector('.icon-pause') };
+    function renderPlayBtn() {
+      playBtnIcons.play.classList.toggle('hidden', tile.running);
+      playBtnIcons.pause.classList.toggle('hidden', !tile.running);
+      const label = tile.running ? t('stopFeed') : t('playFeed');
+      playBtn.setAttribute('aria-label', label);
+      playBtn.title = label;
+    }
+    playBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const resp = await fetch(`/api/sources/${tile.id}/running`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ running: !tile.running }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        tile.running = !tile.running;
+        renderPlayBtn();
+        set(tile.statusTextEl, tile.running ? (tile.videoOpen && tile.countsOpen ? t('live') : t('connecting')) : t('stopped'));
+        updateConnectionStatus();
+      } catch (err) {
+        alert(t('runFailed', err.message));
+      }
+    });
+    renderPlayBtn();
+    el.addEventListener('click', () => openFocus(tile));
+    const stage = el.querySelector('.feed-tile-stage');
+    stage.tabIndex = 0;
+    stage.setAttribute('role', 'button');
+    stage.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openFocus(tile);
+      }
+    });
+
+    feedsGrid.appendChild(el);
+    tiles.set(tile.id, tile);
+
+    connectTileVideoSocket(tile);
+    connectTileCountsSocket(tile);
+    updateEmptyState();
+    reloadVideoList();
+    return tile;
   }
 
-  // State
-  let wsVideo = null;
-  let wsCounts = null;
-  let isVideoConnected = false;
-  let isCountsConnected = false;
-
-  let currentLine = null;
-  let currentRes = [0, 0];
-
-  // FPS & Latency tracking
-  let frameCount = 0;
-  let lastFpsCalc = performance.now();
-  let latencyRolling = 0;
-
-  // Drawing state
-  let isDrawing = false;
-  let drawPoint1 = null;
-  let drawPoint2 = null;
-  let currentHoverPos = null;
-
-  // Last crossing timer
-  let lastCrossingTimer = null;
-
-  // --- WebSocket Connection ---
-  function getWsUrl(endpoint) {
-    const loc = window.location;
-    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = loc.host || 'localhost:8000';
-    return `${proto}//${host}${endpoint}`;
+  function destroyTile(tile) {
+    if (tile.wsVideo) tile.wsVideo.close();
+    if (tile.wsCounts) tile.wsCounts.close();
+    if (focusedTile === tile) closeFocus();
+    tile.el.remove();
+    tiles.delete(tile.id);
+    recomputeTotals();
+    updateEmptyState();
+    updateConnectionStatus();
+    reloadVideoList();
   }
 
-  function setupWebSockets() {
-    connectVideoWs();
-    connectCountsWs();
-  }
-
-  function updateConnectionStatus() {
-    const connected = isVideoConnected && isCountsConnected;
-    if (connected) {
-      connectionBadge.className = 'status status-live';
-      connectionText.textContent = t('live');
-    } else {
-      connectionBadge.className = 'status';
-      connectionText.textContent = isVideoConnected ? t('reconnecting') : t('connecting');
+  async function removeTile(tile) {
+    try {
+      const resp = await fetch(`/api/sources/${tile.id}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      destroyTile(tile);
+    } catch (err) {
+      alert(t('removeFailed', err.message));
     }
   }
 
-  function connectVideoWs() {
-    const url = getWsUrl('/ws/video');
-    wsVideo = new WebSocket(url);
-    wsVideo.binaryType = 'arraybuffer';
+  function updateEmptyState() {
+    feedsEmpty.classList.toggle('hidden', tiles.size > 0);
+  }
 
-    wsVideo.onopen = () => {
-      isVideoConnected = true;
+  // ---- Tile sockets ----
+  function scheduleReconnect(tile, connectFn) {
+    const delay = Math.min(1500 * 2 ** tile.retry, 30000);
+    tile.retry += 1;
+    setTimeout(() => {
+      if (tiles.has(tile.id)) connectFn(tile);
+    }, delay);
+  }
+
+  function connectTileVideoSocket(tile) {
+    const url = getWsUrl(`/ws/video/${tile.id}`);
+    tile.wsVideo = new WebSocket(url);
+    tile.wsVideo.binaryType = 'arraybuffer';
+
+    tile.wsVideo.onopen = () => {
+      tile.videoOpen = true;
+      tile.retry = 0;
       updateConnectionStatus();
     };
 
-    wsVideo.onmessage = async (event) => {
+    tile.wsVideo.onmessage = async (event) => {
       try {
         const buffer = event.data;
         if (buffer.byteLength < 8) return;
-
-        // Extract 8-byte big-endian server timestamp
-        const view = new DataView(buffer);
-        const serverTs = Number(view.getBigInt64(0));
-        const now = Date.now();
-        const latency = Math.max(0, now - serverTs);
-
-        // Exponential moving average for latency
-        latencyRolling = latencyRolling === 0 ? latency : Math.round(latencyRolling * 0.8 + latency * 0.2);
-        set(latencyVal, `${latencyRolling} ms`);
-
-        // Measure FPS
-        frameCount++;
-        const nowPerf = performance.now();
-        if (nowPerf - lastFpsCalc >= 1000) {
-          const fps = ((frameCount * 1000) / (nowPerf - lastFpsCalc)).toFixed(1);
-          set(fpsVal, fps);
-          frameCount = 0;
-          lastFpsCalc = nowPerf;
-        }
-
-        // Decode JPEG with createImageBitmap for fastest hardware-accelerated decode
         const jpegBlob = new Blob([buffer.slice(8)], { type: 'image/jpeg' });
         const bitmap = await createImageBitmap(jpegBlob);
 
-        // Resize canvas buffers to match incoming frame native dimensions
-        if (videoCanvas.width !== bitmap.width || videoCanvas.height !== bitmap.height) {
-          videoCanvas.width = bitmap.width;
-          videoCanvas.height = bitmap.height;
-          overlayCanvas.width = bitmap.width;
-          overlayCanvas.height = bitmap.height;
-          currentRes = [bitmap.width, bitmap.height];
-          set(cfgRes, `${bitmap.width} × ${bitmap.height}`);
+        if (tile.videoCanvas.width !== bitmap.width || tile.videoCanvas.height !== bitmap.height) {
+          tile.videoCanvas.width = bitmap.width;
+          tile.videoCanvas.height = bitmap.height;
+          focusVideo.width = bitmap.width;
+          focusVideo.height = bitmap.height;
+          focusOverlay.width = bitmap.width;
+          focusOverlay.height = bitmap.height;
         }
 
-        videoCtx.drawImage(bitmap, 0, 0);
+        const target = focusedTile === tile ? focusVideoCtx : tile.videoCtx;
+        target.drawImage(bitmap, 0, 0);
         bitmap.close();
+        if (focusedTile === tile && !tile.draw.isDrawing && tile.line) {
+          renderSavedLine(tile);
+        }
       } catch (err) {
         console.error('Frame decode error:', err);
       }
     };
 
-    wsVideo.onclose = () => {
-      isVideoConnected = false;
+    tile.wsVideo.onclose = () => {
+      tile.videoOpen = false;
       updateConnectionStatus();
-      setTimeout(connectVideoWs, 1500);
+      scheduleReconnect(tile, connectTileVideoSocket);
     };
 
-    wsVideo.onerror = () => {
-      wsVideo.close();
-    };
+    tile.wsVideo.onerror = () => tile.wsVideo.close();
   }
 
-  function connectCountsWs() {
-    const url = getWsUrl('/ws/counts');
-    wsCounts = new WebSocket(url);
+  function connectTileCountsSocket(tile) {
+    const url = getWsUrl(`/ws/counts/${tile.id}`);
+    tile.wsCounts = new WebSocket(url);
 
-    wsCounts.onopen = () => {
-      isCountsConnected = true;
+    tile.wsCounts.onopen = () => {
+      tile.countsOpen = true;
+      tile.retry = 0;
       updateConnectionStatus();
     };
 
-    wsCounts.onmessage = (event) => {
+    tile.wsCounts.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        tile.counts.in = data.in ?? 0;
+        tile.counts.out = data.out ?? 0;
+        tile.counts.current = data.current ?? 0;
+        tile.statVals[0].textContent = tile.counts.in;
+        tile.statVals[1].textContent = tile.counts.out;
+        tile.statVals[2].textContent = tile.counts.current;
+        recomputeTotals();
 
-        // Update counts
-        statInVal.textContent = data.in ?? 0;
-        statOutVal.textContent = data.out ?? 0;
-        statCurrentVal.textContent = data.current ?? 0;
+        if (data.line) tile.line = data.line;
+        if (data.entering_direction) tile.enteringDirection = data.entering_direction;
 
-        // Last crossing notification
-        if (data.last_crossing && data.last_crossing.trim() !== '') {
+        if (data.last_crossing && data.last_crossing.trim() !== '' && focusedTile === tile) {
           set(lastCrossingText, t('visitorCounted'));
           lastCrossingTag.classList.remove('hidden');
-
-          if (lastCrossingTimer) clearTimeout(lastCrossingTimer);
-          lastCrossingTimer = setTimeout(() => {
-            lastCrossingTag.classList.add('hidden');
-          }, 3000);
+          if (tile.crossingTimer) clearTimeout(tile.crossingTimer);
+          tile.crossingTimer = setTimeout(() => lastCrossingTag.classList.add('hidden'), 3000);
         }
 
-        // Active config display
-        if (data.line) {
-          currentLine = data.line;
-          if (cfgLine) {
-            cfgLine.textContent = t('lineIsSet');
-            cfgLine.classList.add('ok');
-          }
-        }
-        if (data.entering_direction) {
-          setActiveDir(data.entering_direction);
-        }
-        if (data.resolution && data.resolution[0] > 0) {
-          set(cfgRes, `${data.resolution[0]} × ${data.resolution[1]}`);
+        if (focusedTile === tile) {
+          updateFocusChrome();
+          if (!tile.draw.isDrawing && tile.line) renderSavedLine(tile);
         }
       } catch (err) {
         console.error('Counts parse error:', err);
       }
     };
 
-    wsCounts.onclose = () => {
-      isCountsConnected = false;
+    tile.wsCounts.onclose = () => {
+      tile.countsOpen = false;
       updateConnectionStatus();
-      setTimeout(connectCountsWs, 1500);
+      scheduleReconnect(tile, connectTileCountsSocket);
     };
 
-    wsCounts.onerror = () => {
-      wsCounts.close();
-    };
+    tile.wsCounts.onerror = () => tile.wsCounts.close();
   }
 
-  // --- Interactive Line Drawing ---
-  function setupDrawingEvents() {
-    btnDrawToggle.addEventListener('click', () => {
-      if (isDrawing) {
-        stopDrawingMode();
-      } else {
-        startDrawingMode();
-      }
-    });
-
-    btnDrawReset.addEventListener('click', resetDrawingPoints);
-    btnDrawCancel.addEventListener('click', stopDrawingMode);
-    btnDrawConfirm.addEventListener('click', confirmLine);
-
-    overlayCanvas.addEventListener('click', handleCanvasClick);
-    overlayCanvas.addEventListener('mousemove', handleCanvasMouseMove);
+  // ---- Focus overlay ----
+  function openFocus(tile) {
+    if (focusedTile === tile) return;
+    if (focusedTile) closeFocus();
+    focusedTile = tile;
+    set(focusName, tile.name);
+    focusVeil.classList.remove('hidden');
+    set(tile.statusTextEl, tile.videoOpen && tile.countsOpen ? t('live') : t('connecting'));
+    updateFocusChrome();
+    if (tile.line) renderSavedLine(tile);
   }
 
+  function closeFocus() {
+    if (!focusedTile) return;
+    stopDrawingMode();
+    focusedTile = null;
+    focusVeil.classList.add('hidden');
+    focusOverlayCtx.clearRect(0, 0, focusOverlay.width, focusOverlay.height);
+  }
+
+  // ---- Line drawing ----
   function startDrawingMode() {
-    isDrawing = true;
+    if (!focusedTile) return;
+    const tile = focusedTile;
+    tile.draw.isDrawing = true;
     resetDrawingPoints();
-    videoWrapper.classList.add('drawing-active');
+    focusStage.classList.add('drawing-active');
     drawActions.classList.remove('hidden');
     drawBanner.classList.remove('hidden');
     btnDrawToggle.classList.add('hidden');
-    drawPrompt.textContent = t('step1');
+    set(drawPrompt, t('step1'));
   }
 
   function stopDrawingMode() {
-    isDrawing = false;
+    if (!focusedTile) return;
+    const tile = focusedTile;
+    tile.draw.isDrawing = false;
     resetDrawingPoints();
-    videoWrapper.classList.remove('drawing-active');
+    focusStage.classList.remove('drawing-active');
     drawActions.classList.add('hidden');
     drawBanner.classList.add('hidden');
     btnDrawToggle.classList.remove('hidden');
-    clearOverlay();
+    focusOverlayCtx.clearRect(0, 0, focusOverlay.width, focusOverlay.height);
+    if (tile.line) renderSavedLine(tile);
   }
 
   function resetDrawingPoints() {
-    drawPoint1 = null;
-    drawPoint2 = null;
-    currentHoverPos = null;
+    if (!focusedTile) return;
+    const tile = focusedTile;
+    tile.draw.p1 = null;
+    tile.draw.p2 = null;
+    tile.draw.hover = null;
     btnDrawConfirm.disabled = true;
-    if (isDrawing) {
-      drawPrompt.textContent = t('step1');
-    }
+    if (tile.draw.isDrawing) set(drawPrompt, t('step1'));
     clearOverlay();
   }
 
   function getCanvasCoords(e) {
-    const rect = overlayCanvas.getBoundingClientRect();
-    const scaleX = overlayCanvas.width / rect.width;
-    const scaleY = overlayCanvas.height / rect.height;
+    const rect = focusOverlay.getBoundingClientRect();
+    const scaleX = focusOverlay.width / rect.width;
+    const scaleY = focusOverlay.height / rect.height;
     return {
       x: Math.round((e.clientX - rect.left) * scaleX),
       y: Math.round((e.clientY - rect.top) * scaleY),
@@ -493,89 +658,100 @@
   }
 
   function handleCanvasClick(e) {
-    if (!isDrawing) return;
-
+    if (!focusedTile || !focusedTile.draw.isDrawing) return;
+    const tile = focusedTile;
     const coords = getCanvasCoords(e);
 
-    if (!drawPoint1) {
-      drawPoint1 = coords;
-      drawPrompt.textContent = t('step2');
+    if (!tile.draw.p1) {
+      tile.draw.p1 = coords;
+      set(drawPrompt, t('step2'));
       renderOverlay();
-    } else if (!drawPoint2) {
-      drawPoint2 = coords;
+    } else if (!tile.draw.p2) {
+      tile.draw.p2 = coords;
       btnDrawConfirm.disabled = false;
-      drawPrompt.textContent = t('lineLooksGood');
+      set(drawPrompt, t('lineLooksGood'));
       renderOverlay();
     }
   }
 
   function handleCanvasMouseMove(e) {
-    if (!isDrawing) return;
-    currentHoverPos = getCanvasCoords(e);
+    if (!focusedTile || !focusedTile.draw.isDrawing) return;
+    focusedTile.draw.hover = getCanvasCoords(e);
     renderOverlay();
   }
 
   function clearOverlay() {
-    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    focusOverlayCtx.clearRect(0, 0, focusOverlay.width, focusOverlay.height);
   }
 
   function renderOverlay() {
     clearOverlay();
-    if (!isDrawing) return;
+    if (!focusedTile || !focusedTile.draw.isDrawing) return;
+    const tile = focusedTile;
 
-    // Draw point 1 marker
-    if (drawPoint1) {
-      drawMarker(drawPoint1.x, drawPoint1.y, '#10b981', 'P1');
-
-      // Draw line to point 2 or to current hover
-      const endPoint = drawPoint2 || currentHoverPos;
+    if (tile.draw.p1) {
+      drawMarker(tile.draw.p1.x, tile.draw.p1.y, '#10b981', 'P1');
+      const endPoint = tile.draw.p2 || tile.draw.hover;
       if (endPoint) {
-        overlayCtx.beginPath();
-        overlayCtx.strokeStyle = '#d97706';
-        overlayCtx.lineWidth = 2.5;
-        overlayCtx.setLineDash(drawPoint2 ? [] : [6, 4]);
-        overlayCtx.moveTo(drawPoint1.x, drawPoint1.y);
-        overlayCtx.lineTo(endPoint.x, endPoint.y);
-        overlayCtx.stroke();
-        overlayCtx.setLineDash([]);
+        focusOverlayCtx.beginPath();
+        focusOverlayCtx.strokeStyle = '#d97706';
+        focusOverlayCtx.lineWidth = 2.5;
+        focusOverlayCtx.setLineDash(tile.draw.p2 ? [] : [6, 4]);
+        focusOverlayCtx.moveTo(tile.draw.p1.x, tile.draw.p1.y);
+        focusOverlayCtx.lineTo(endPoint.x, endPoint.y);
+        focusOverlayCtx.stroke();
+        focusOverlayCtx.setLineDash([]);
       }
     }
 
-    // Draw point 2 marker
-    if (drawPoint2) {
-      drawMarker(drawPoint2.x, drawPoint2.y, '#d97706', 'P2');
+    if (tile.draw.p2) {
+      drawMarker(tile.draw.p2.x, tile.draw.p2.y, '#d97706', 'P2');
     }
   }
 
   function drawMarker(x, y, color, label) {
-    overlayCtx.beginPath();
-    overlayCtx.arc(x, y, 7, 0, Math.PI * 2);
-    overlayCtx.fillStyle = color;
-    overlayCtx.fill();
-    overlayCtx.strokeStyle = '#ffffff';
-    overlayCtx.lineWidth = 2;
-    overlayCtx.stroke();
+    focusOverlayCtx.beginPath();
+    focusOverlayCtx.arc(x, y, 7, 0, Math.PI * 2);
+    focusOverlayCtx.fillStyle = color;
+    focusOverlayCtx.fill();
+    focusOverlayCtx.strokeStyle = '#ffffff';
+    focusOverlayCtx.lineWidth = 2;
+    focusOverlayCtx.stroke();
 
-    overlayCtx.font = 'bold 12px JetBrains Mono, sans-serif';
-    overlayCtx.fillStyle = '#ffffff';
-    overlayCtx.fillText(`${label} (${x}, ${y})`, x + 12, y - 8);
+    focusOverlayCtx.font = 'bold 12px Plus Jakarta Sans, sans-serif';
+    focusOverlayCtx.fillStyle = '#ffffff';
+    focusOverlayCtx.fillText(`${label} (${x}, ${y})`, x + 12, y - 8);
+  }
+
+  function renderSavedLine(tile) {
+    if (!tile.line) return;
+    clearOverlay();
+    const [x1, y1, x2, y2] = tile.line;
+    focusOverlayCtx.beginPath();
+    focusOverlayCtx.strokeStyle = '#d97706';
+    focusOverlayCtx.lineWidth = 2.5;
+    focusOverlayCtx.moveTo(x1, y1);
+    focusOverlayCtx.lineTo(x2, y2);
+    focusOverlayCtx.stroke();
   }
 
   async function confirmLine() {
-    if (!drawPoint1 || !drawPoint2) return;
+    if (!focusedTile) return;
+    const tile = focusedTile;
+    if (!tile.draw.p1 || !tile.draw.p2) return;
 
     try {
       btnDrawConfirm.disabled = true;
       btnDrawConfirm.textContent = t('saving');
 
       const payload = {
-        x1: drawPoint1.x,
-        y1: drawPoint1.y,
-        x2: drawPoint2.x,
-        y2: drawPoint2.y,
+        x1: tile.draw.p1.x,
+        y1: tile.draw.p1.y,
+        x2: tile.draw.p2.x,
+        y2: tile.draw.p2.y,
       };
 
-      const resp = await fetch('/api/line', {
+      const resp = await fetch(`/api/sources/${tile.id}/line`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -584,8 +760,8 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       const result = await resp.json();
-      currentLine = result.line;
-
+      tile.line = result.line;
+      tile.enteringDirection = result.entering_direction;
       stopDrawingMode();
     } catch (err) {
       alert(t('failedSaveLine', err.message));
@@ -595,11 +771,35 @@
     }
   }
 
-  // --- Button & Form Events ---
-  function setupButtonEvents() {
+  // ---- Focus events ----
+  function setupFocusEvents() {
+    btnDrawToggle.addEventListener('click', () => {
+      if (focusedTile && focusedTile.draw.isDrawing) {
+        stopDrawingMode();
+      } else {
+        startDrawingMode();
+      }
+    });
+
+    btnDrawReset.addEventListener('click', resetDrawingPoints);
+    btnDrawCancel.addEventListener('click', stopDrawingMode);
+    btnDrawConfirm.addEventListener('click', confirmLine);
+    btnFocusClose.addEventListener('click', closeFocus);
+    focusVeil.addEventListener('click', (e) => {
+      if (e.target === focusVeil) closeFocus();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && focusedTile) closeFocus();
+    });
+
+    focusOverlay.addEventListener('click', handleCanvasClick);
+    focusOverlay.addEventListener('mousemove', handleCanvasMouseMove);
+
     btnResetCounts.addEventListener('click', async () => {
+      if (!focusedTile) return;
       try {
-        await fetch('/api/reset', { method: 'POST' });
+        const resp = await fetch(`/api/sources/${focusedTile.id}/reset`, { method: 'POST' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       } catch (err) {
         console.error('Failed to reset counts:', err);
       }
@@ -607,25 +807,29 @@
 
     document.querySelectorAll('.dir-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
+        if (!focusedTile) return;
         const selected = btn.dataset.value || null;
-        if (!currentLine) {
+        if (!focusedTile.line) {
           showDirHint(t('setLineFirst'));
           return;
         }
 
         try {
-          await fetch('/api/line', {
+          const resp = await fetch(`/api/sources/${focusedTile.id}/line`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              x1: currentLine[0],
-              y1: currentLine[1],
-              x2: currentLine[2],
-              y2: currentLine[3],
+              x1: focusedTile.line[0],
+              y1: focusedTile.line[1],
+              x2: focusedTile.line[2],
+              y2: focusedTile.line[3],
               entering_direction: selected,
             }),
           });
-          setActiveDir(selected);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const result = await resp.json();
+          focusedTile.enteringDirection = result.entering_direction;
+          setActiveDir(result.entering_direction);
           showDirHint(t('saved'));
         } catch (err) {
           showDirHint(t('couldNotSave'));
@@ -633,30 +837,165 @@
       });
     });
 
-    btnSwitchSource.addEventListener('click', async () => {
-      const selected = selectVideoSource.value;
-      if (!selected) return;
-      try {
-        btnSwitchSource.textContent = t('switching');
-        const resp = await fetch('/api/source', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source: selected }),
+    document.querySelectorAll('.model-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!focusedTile || btn.dataset.model === focusedTile.model) return;
+        const model = btn.dataset.model;
+        document.querySelectorAll('.model-btn').forEach((b) => (b.disabled = true));
+        try {
+          const resp = await fetch(`/api/sources/${focusedTile.id}/model`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model }),
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const result = await resp.json();
+          focusedTile.model = result.model;
+          setActiveModel(result.model);
+        } catch (err) {
+          alert(t('modelFailed', err.message));
+        } finally {
+          document.querySelectorAll('.model-btn').forEach((b) => (b.disabled = false));
+        }
+      });
+    });
+  }
+
+  // ---- Add-feed sidebar ----
+  function renderVideoList(videos) {
+    videoListEl.innerHTML = '';
+    if (!videos.length) {
+      const note = document.createElement('p');
+      note.className = 'feed-hint';
+      note.textContent = t('noVideos');
+      videoListEl.appendChild(note);
+      return;
+    }
+
+    const addedNames = new Set(
+      [...tiles.values()].map((tile) => tile.source.split(/[\\/]/).pop())
+    );
+
+    videos.forEach((vid) => {
+      const name = vid.split(/[\\/]/).pop();
+      const row = document.createElement('div');
+      row.className = 'video-row';
+
+      const label = document.createElement('span');
+      label.className = 'video-name';
+      label.textContent = name;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn video-add';
+      if (addedNames.has(name)) {
+        btn.disabled = true;
+        btn.textContent = t('added');
+      } else {
+        btn.textContent = t('add');
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = t('loading');
+          try {
+            const resp = await fetch('/api/sources', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ source: vid, name }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const src = await resp.json();
+            createTile(src);
+          } catch (err) {
+            alert(err.message);
+            btn.disabled = false;
+            btn.textContent = t('add');
+          }
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        const baseName = data.source.split(/[\\/]/).pop();
-        cfgSource.textContent = baseName;
-      } catch (err) {
-        alert(t('failedSwitch', err.message));
-      } finally {
-        btnSwitchSource.textContent = t('switch');
       }
+
+      row.appendChild(label);
+      row.appendChild(btn);
+      videoListEl.appendChild(row);
+    });
+  }
+
+  async function reloadVideoList() {
+    try {
+      const resp = await fetch('/api/videos');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      renderVideoList(data.videos || []);
+    } catch (err) {
+      console.error('Failed to load video list:', err);
+    }
+  }
+
+  // ---- Reports ----
+  function renderReports(reports) {
+    reportsList.innerHTML = '';
+    if (!reports.length) {
+      const note = document.createElement('p');
+      note.className = 'feed-hint';
+      note.textContent = t('reportsEmpty');
+      reportsList.appendChild(note);
+      return;
+    }
+
+    reports.forEach((rep) => {
+      const row = document.createElement('div');
+      row.className = 'video-row';
+
+      const info = document.createElement('div');
+      info.className = 'report-info';
+
+      const name = document.createElement('span');
+      name.className = 'video-name';
+      name.textContent = `${rep.date} — ${rep.name}`;
+
+      const meta = document.createElement('span');
+      meta.className = 'report-meta';
+      meta.textContent = t('reportMeta', rep.in, rep.out);
+
+      info.appendChild(name);
+      info.appendChild(meta);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn video-add';
+      btn.textContent = t('download');
+      btn.addEventListener('click', () => {
+        window.location.href = `/api/reports/${encodeURIComponent(rep.filename)}`;
+      });
+
+      row.appendChild(info);
+      row.appendChild(btn);
+      reportsList.appendChild(row);
+    });
+  }
+
+  async function loadReports() {
+    try {
+      const resp = await fetch('/api/reports');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      renderReports(data.reports || []);
+    } catch (err) {
+      console.error('Failed to load reports:', err);
+    }
+  }
+
+  function setupFeedEvents() {
+    segButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        segButtons.forEach((b) => b.classList.toggle('active', b === btn));
+        const mode = btn.dataset.mode;
+        feedFile.classList.toggle('hidden', mode !== 'file');
+        feedCamera.classList.toggle('hidden', mode !== 'camera');
+      });
     });
 
-    btnTriggerUpload.addEventListener('click', () => {
-      inputVideoFile.click();
-    });
+    btnTriggerUpload.addEventListener('click', () => inputVideoFile.click());
+    if (btnReportsRefresh) btnReportsRefresh.addEventListener('click', loadReports);
 
     inputVideoFile.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
@@ -670,21 +1009,13 @@
         uploadProgressMsg.textContent = t('uploadingFile', file.name);
         btnTriggerUpload.disabled = true;
 
-        const resp = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
+        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const result = await resp.json();
 
-        uploadProgressMsg.textContent = t('nowPlaying', result.filename);
-        setTimeout(() => {
-          uploadProgressMsg.classList.add('hidden');
-        }, 3000);
-
-        await loadAvailableVideos(result.source);
-        cfgSource.textContent = result.filename;
+        createTile(result.source);
+        uploadProgressMsg.textContent = t('uploaded');
+        setTimeout(() => uploadProgressMsg.classList.add('hidden'), 2500);
       } catch (err) {
         alert(t('uploadFailed', err.message));
         uploadProgressMsg.classList.add('hidden');
@@ -692,39 +1023,6 @@
         btnTriggerUpload.disabled = false;
         inputVideoFile.value = '';
       }
-    });
-  }
-
-  async function loadAvailableVideos(preferredSelected = null) {
-    try {
-      const resp = await fetch('/api/videos');
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const videos = data.videos || [];
-
-      selectVideoSource.innerHTML = '';
-      videos.forEach((vid) => {
-        const opt = document.createElement('option');
-        opt.value = vid;
-        opt.textContent = vid.split(/[\\/]/).pop();
-        if (preferredSelected && vid === preferredSelected) {
-          opt.selected = true;
-        }
-        selectVideoSource.appendChild(opt);
-      });
-    } catch (err) {
-      console.error('Failed to load video list:', err);
-    }
-  }
-
-  function setupFeedEvents() {
-    segButtons.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        segButtons.forEach((b) => b.classList.toggle('active', b === btn));
-        const mode = btn.dataset.mode;
-        feedFile.classList.toggle('hidden', mode !== 'file');
-        feedCamera.classList.toggle('hidden', mode !== 'camera');
-      });
     });
 
     btnDiscover.addEventListener('click', async () => {
@@ -820,7 +1118,7 @@
           throw new Error(data?.detail || `HTTP ${resp.status}`);
         }
         const data = await resp.json();
-        set(cfgSource, data.host);
+        createTile(data.source);
         setCameraStatus(t('connectedTo', data.host), true);
         cameraCreds.classList.add('hidden');
         cameraList.querySelectorAll('.camera-chip').forEach((c) => c.classList.remove('active'));
@@ -835,6 +1133,19 @@
         btnCameraConnect.textContent = t('connect');
       }
     });
+  }
+
+  let selectedCamera = null;
+  let selectedProfile = null;
+
+  function setCameraStatus(msg, transient) {
+    if (!cameraStatus) return;
+    cameraStatus.textContent = msg;
+    cameraStatus.classList.remove('hidden');
+    clearTimeout(cameraStatusTimer);
+    if (transient) {
+      cameraStatusTimer = setTimeout(() => cameraStatus.classList.add('hidden'), 3500);
+    }
   }
 
   function renderCameras(devices) {
@@ -883,36 +1194,31 @@
     }
   }
 
-  function setupTheme() {
-    const root = document.documentElement;
-    const saved = localStorage.getItem('theme');
-    const initial = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    root.setAttribute('data-theme', initial);
-    const toggle = document.getElementById('theme-toggle');
-    if (toggle) {
-      toggle.addEventListener('click', () => {
-        const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        root.setAttribute('data-theme', next);
-        localStorage.setItem('theme', next);
-      });
+  // ---- Boot ----
+  async function loadSources() {
+    try {
+      const resp = await fetch('/api/sources');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      (data.sources || []).forEach((src) => createTile(src));
+    } catch (err) {
+      console.error('Failed to load sources:', err);
     }
   }
 
   function init() {
     setupTheme();
     setupLang();
-    setupWebSockets();
-    setupDrawingEvents();
-    setupButtonEvents();
+    setupFocusEvents();
     setupFeedEvents();
-    loadAvailableVideos();
+    loadSources();
+    reloadVideoList();
+    loadReports();
   }
 
-  // Initialize once DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
 })();
-

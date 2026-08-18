@@ -25,7 +25,6 @@
         </div>
       </div>
       <div class="topbar-right">
-        <span class="source-chip"><span data-i18n="source">Source:</span> <strong id="cfg-source">test1.mp4</strong></span>
         <span id="connection-badge" class="status">
           <span class="status-dot"></span>
           <span id="connection-text">Connecting…</span>
@@ -88,52 +87,24 @@
     </section>
 
     <main class="layout">
-      <section class="video-area">
-        <div class="video-chamber" id="video-wrapper">
-          <canvas id="video-canvas"></canvas>
-          <canvas id="overlay-canvas"></canvas>
-
-          <div id="last-crossing-tag" class="crossing-toast hidden" role="status">
-            <span class="crossing-dot"></span>
-            <span id="last-crossing-text" data-i18n="visitorCounted">Visitor counted</span>
-          </div>
-
-          <div id="draw-banner" class="draw-hint hidden">
-            <span id="draw-prompt" data-i18n="step1">Step 1: click one end of where people cross</span>
-          </div>
-        </div>
-
-        <div class="video-controls">
-          <div class="action-cluster">
-            <button id="btn-draw-toggle" class="btn btn-dark">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-              </svg>
-              <span data-i18n="setLine">Set counting line</span>
-            </button>
-
-            <div id="draw-actions" class="draw-actions hidden">
-              <button id="btn-draw-confirm" class="btn btn-success" disabled data-i18n="saveLine">Save line</button>
-              <button id="btn-draw-reset" class="btn" data-i18n="startOver">Start over</button>
-              <button id="btn-draw-cancel" class="btn btn-ghost" data-i18n="cancel">Cancel</button>
-            </div>
-          </div>
-
-          <button id="btn-reset-counts" class="btn btn-ghost">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      <section class="feeds-area">
+        <div id="feeds-empty" class="empty-state hidden">
+          <div class="empty-mark" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="14" rx="3"></rect>
+              <path d="M2 9h20M7 4v5"></path>
             </svg>
-            <span data-i18n="resetCounters">Reset counters</span>
-          </button>
+          </div>
+          <h2 data-i18n="noFeeds">No feeds yet</h2>
+          <p data-i18n="addFirstFeed">Add a video or camera from the panel to start counting.</p>
         </div>
+        <div id="feeds-grid" class="feeds-grid"></div>
       </section>
 
       <aside class="settings">
         <div class="setting-group">
           <div class="group-head">
-            <h2>Video feed</h2>
+            <h2 data-i18n="addFeed">Add a feed</h2>
           </div>
 
           <div class="seg" role="tablist" aria-label="Feed type">
@@ -142,11 +113,8 @@
           </div>
 
           <div id="feed-file" class="feed-body">
-            <select id="select-video-source" class="control-select">
-              <option value="test1.mp4">test1.mp4</option>
-            </select>
+            <div id="video-list" class="video-list"></div>
             <div class="button-row">
-              <button id="btn-switch-source" class="btn flex-1" data-i18n="switch">Switch</button>
               <button id="btn-trigger-upload" class="btn flex-1" data-i18n="uploadVideo">Upload video</button>
               <input type="file" id="input-video-file" accept=".mp4,.avi,.mov,.mkv,.webm" class="hidden" />
             </div>
@@ -172,58 +140,153 @@
 
         <div class="setting-group">
           <div class="group-head">
-            <h2 data-i18n="countingSettings">Counting settings</h2>
-            <span id="cfg-line" class="line-pill">No line yet</span>
+            <h2 data-i18n="reports">Reports</h2>
+            <button id="btn-reports-refresh" class="btn btn-ghost report-refresh" type="button" data-i18n="refresh">Refresh</button>
           </div>
-
-          <p class="field-label" data-i18n="whichWay">Which way do people move when they enter?</p>
-
-          <div class="dir-grid">
-            <button type="button" class="dir-btn" data-value="north_to_south">
-              <span class="dir-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 5v14"></path>
-                  <path d="M6 13l6 6 6-6"></path>
-                </svg>
-              </span>
-              <span data-i18n="topToBottom">Top to bottom</span>
-            </button>
-
-            <button type="button" class="dir-btn" data-value="south_to_north">
-              <span class="dir-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 19V5"></path>
-                  <path d="M6 11l6-6 6 6"></path>
-                </svg>
-              </span>
-              <span data-i18n="bottomToTop">Bottom to top</span>
-            </button>
-
-            <button type="button" class="dir-btn" data-value="west_to_east">
-              <span class="dir-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 12h16"></path>
-                  <path d="M13 5l7 7-7 7"></path>
-                </svg>
-              </span>
-              <span data-i18n="leftToRight">Left to right</span>
-            </button>
-
-            <button type="button" class="dir-btn" data-value="east_to_west">
-              <span class="dir-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 12H4"></path>
-                  <path d="M11 5l-7 7 7 7"></path>
-                </svg>
-              </span>
-              <span data-i18n="rightToLeft">Right to left</span>
-            </button>
-          </div>
-
-          <p id="dir-hint" class="dir-hint hidden"></p>
+          <div id="reports-list" class="report-list"></div>
         </div>
       </aside>
     </main>
+  </div>
+
+  <template id="feed-tile-tpl">
+    <article class="feed-tile">
+      <div class="feed-tile-head">
+        <span class="tile-name"></span>
+        <span class="tile-status status"><span class="status-dot"></span><span class="tile-status-text"></span></span>
+        <button type="button" class="tile-play" title="Stop">
+          <svg class="icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+            <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+          </svg>
+          <svg class="icon-play hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7 4.5v15l13-7.5-13-7.5z"></path>
+          </svg>
+        </button>
+        <button type="button" class="tile-line" title="Set counting line">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+        </button>
+        <button type="button" class="tile-remove" aria-label="Remove feed" title="Remove feed">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="feed-tile-stage">
+        <canvas class="tile-video"></canvas>
+      </div>
+      <div class="feed-tile-counts">
+        <span class="tile-stat stat-in">
+          <b class="tile-stat-val">0</b>
+          <span class="tile-stat-label" data-i18n="entered">entered</span>
+        </span>
+        <span class="tile-stat stat-out">
+          <b class="tile-stat-val">0</b>
+          <span class="tile-stat-label" data-i18n="left">left</span>
+        </span>
+        <span class="tile-stat stat-current">
+          <b class="tile-stat-val">0</b>
+          <span class="tile-stat-label" data-i18n="inSpace">people in the space</span>
+        </span>
+      </div>
+    </article>
+  </template>
+
+  <div id="focus-veil" class="focus-veil hidden" role="dialog" aria-modal="true" aria-label="Feed details">
+    <div class="focus-stage">
+      <div class="focus-head">
+        <span id="focus-name" class="focus-name"></span>
+        <div class="focus-actions">
+          <button id="btn-draw-toggle" class="btn btn-dark">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+            <span data-i18n="setLine">Set counting line</span>
+          </button>
+          <button id="btn-reset-counts" class="btn" data-i18n="resetCounters">Reset counters</button>
+          <button id="btn-focus-close" class="btn btn-ghost" data-i18n="backToAll">Back to all feeds</button>
+        </div>
+      </div>
+
+      <div id="focus-stage" class="focus-stage-canvas">
+        <canvas id="focus-video"></canvas>
+        <canvas id="focus-overlay"></canvas>
+
+        <div id="last-crossing-tag" class="crossing-toast hidden" role="status">
+          <span class="crossing-dot"></span>
+          <span id="last-crossing-text" data-i18n="visitorCounted">Visitor counted</span>
+        </div>
+
+        <div id="draw-banner" class="draw-hint hidden">
+          <span id="draw-prompt" data-i18n="step1">Step 1: click one end of where people cross</span>
+        </div>
+      </div>
+
+      <div id="draw-actions" class="draw-actions focus-draw-actions hidden">
+        <button id="btn-draw-confirm" class="btn btn-success" disabled data-i18n="saveLine">Save line</button>
+        <button id="btn-draw-reset" class="btn" data-i18n="startOver">Start over</button>
+        <button id="btn-draw-cancel" class="btn btn-ghost" data-i18n="cancel">Cancel</button>
+      </div>
+
+      <div class="focus-settings">
+        <div class="group-head">
+          <h2 data-i18n="countingSettings">Counting settings</h2>
+          <span id="cfg-line" class="line-pill">No line yet</span>
+        </div>
+        <p class="field-label" data-i18n="modelLabel">Counting precision</p>
+        <div class="seg" role="radiogroup" aria-label="Counting precision">
+          <button type="button" class="seg-btn model-btn active" data-model="quick" data-i18n="modelQuick">Quick</button>
+          <button type="button" class="seg-btn model-btn" data-model="precise" data-i18n="modelPrecise">Precise</button>
+        </div>
+        <p class="field-label" data-i18n="whichWay">Which way do people move when they enter?</p>
+        <div class="dir-grid">
+          <button type="button" class="dir-btn" data-value="north_to_south">
+            <span class="dir-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14"></path>
+                <path d="M6 13l6 6 6-6"></path>
+              </svg>
+            </span>
+            <span data-i18n="topToBottom">Top to bottom</span>
+          </button>
+
+          <button type="button" class="dir-btn" data-value="south_to_north">
+            <span class="dir-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19V5"></path>
+                <path d="M6 11l6-6 6 6"></path>
+              </svg>
+            </span>
+            <span data-i18n="bottomToTop">Bottom to top</span>
+          </button>
+
+          <button type="button" class="dir-btn" data-value="west_to_east">
+            <span class="dir-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12h16"></path>
+                <path d="M13 5l7 7-7 7"></path>
+              </svg>
+            </span>
+            <span data-i18n="leftToRight">Left to right</span>
+          </button>
+
+          <button type="button" class="dir-btn" data-value="east_to_west">
+            <span class="dir-icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 12H4"></path>
+                <path d="M11 5l-7 7 7 7"></path>
+              </svg>
+            </span>
+            <span data-i18n="rightToLeft">Right to left</span>
+          </button>
+        </div>
+        <p id="dir-hint" class="dir-hint hidden"></p>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

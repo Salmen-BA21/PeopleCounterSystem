@@ -135,6 +135,14 @@ class PeopleCounter:
         self.last_centers: dict[int, tuple[float, float]] = {}
         self.crossed_track_directions: dict[int, str] = {}
         self.track_trails: dict[int, deque[tuple[int, int]]] = {}
+        self.last_seen: dict[int, int] = {}
+
+    def replace_model(self, model: str | Any, confidence: float | None = None, device: str | None = None) -> None:
+        self.model = YOLO(model) if isinstance(model, str) else model
+        if confidence is not None:
+            self.confidence = confidence
+        if device is not None:
+            self.device = device
 
     def set_line(self, x1: int, y1: int, x2: int, y2: int, entering_direction: str | None = None) -> None:
         self.count_line = (x1, y1, x2, y2)
@@ -150,6 +158,7 @@ class PeopleCounter:
         self.last_centers.clear()
         self.crossed_track_directions.clear()
         self.track_trails.clear()
+        self.last_seen.clear()
 
     def get_counts(self) -> dict[str, Any]:
         return {
@@ -203,6 +212,7 @@ class PeopleCounter:
                         )
                         self.crossed_track_directions[track_id] = direction
                 self.last_centers[track_id] = center
+                self.last_seen[track_id] = self.frame_index
                 trail = self.track_trails.setdefault(track_id, deque(maxlen=30))
                 trail.append((int(center[0]), int(center[1])))
 
@@ -245,6 +255,13 @@ class PeopleCounter:
                 2,
             )
         self.frame_index += 1
+        stale = [tid for tid, seen in self.last_seen.items()
+                 if self.frame_index - seen > int(self.fps * 5)]
+        for tid in stale:
+            self.last_seen.pop(tid, None)
+            self.last_centers.pop(tid, None)
+            self.crossed_track_directions.pop(tid, None)
+            self.track_trails.pop(tid, None)
         return annotated, self.get_counts()
 
 
