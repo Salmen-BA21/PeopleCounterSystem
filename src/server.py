@@ -205,7 +205,8 @@ class VideoStreamWorker:
                 if is_file_source and self.source_fps > 0:
                     time.sleep(max(0.001, (1.0 / self.source_fps) * 0.4))
         finally:
-            capture.release()
+            if capture is not None:
+                capture.release()
 
     def get_latest_frame(self) -> tuple[int, bytes | None, int]:
         with self.lock:
@@ -310,7 +311,7 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
 
     @app.post("/api/upload")
     async def upload_video(file: UploadFile = File(...)) -> dict[str, Any]:
-        filename = Path(file.filename).name
+        filename = Path(file.filename or "upload.mp4").name
         ext = Path(filename).suffix.lower()
         if ext not in VIDEO_EXTENSIONS:
             raise HTTPException(status_code=400, detail=f"Unsupported format. Allowed: {VIDEO_EXTENSIONS}")
@@ -353,7 +354,7 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
         seen: set[tuple[str, int]] = set()
         for dev in devices:
             host, port = _normalize(dev)
-            if not host or (host, port) in seen:
+            if not host or port is None or (host, port) in seen:
                 continue
             seen.add((host, port))
             result.append(
