@@ -7,6 +7,7 @@ import asyncio
 import csv
 import os
 import struct
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -33,11 +34,27 @@ from src.count_people import (
 )
 from src import discover_cameras
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = ROOT_DIR / "web"
-UPLOADS_DIR = ROOT_DIR / "uploads"
-REPORTS_DIR = ROOT_DIR / "reports"
-DEFAULT_LINE_FILE = ROOT_DIR / "line.txt"
+
+def resource_path(relative: str) -> Path:
+    """Resolve a path that works in both dev and PyInstaller-frozen mode."""
+    if getattr(sys, "frozen", False):
+        # When frozen, resolve relative to the EXE directory (allows user-replaceable files)
+        return Path(sys.executable).parent / relative
+    return Path(__file__).resolve().parent.parent / relative
+
+
+def bundled_path(relative: str) -> Path:
+    """Resolve bundled read-only data (web/, models) — lives in the temp extraction dir."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / relative  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parent.parent / relative
+
+
+ROOT_DIR = resource_path(".")
+WEB_DIR = bundled_path("web")
+UPLOADS_DIR = resource_path("uploads")
+REPORTS_DIR = resource_path("reports")
+DEFAULT_LINE_FILE = resource_path("line.txt")
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 
@@ -478,6 +495,15 @@ def main() -> None:
         print("[WARN] CUDA not available, falling back to CPU.")
         device = "cpu"
 
+    model_path = args.model
+    if not Path(model_path).is_absolute():
+        exe_dir = resource_path(model_path)
+        bundled = bundled_path(model_path)
+        if exe_dir.exists():
+            model_path = str(exe_dir)
+        elif bundled.exists():
+            model_path = str(bundled)
+
     source = source_with_credentials(args.source, args.username, args.password) if args.source else ""
     initial_line = None
     line_file = args.line_file or (str(DEFAULT_LINE_FILE) if DEFAULT_LINE_FILE.exists() else None)
@@ -488,7 +514,7 @@ def main() -> None:
             print(f"[WARN] Could not parse line configuration: {e}")
 
     counter = PeopleCounter(
-        model=args.model,
+        model=model_path,
         confidence=args.confidence,
         device=device,
         count_line=initial_line,
@@ -500,7 +526,7 @@ def main() -> None:
         source=source,
         counter=counter,
         jpeg_quality=args.jpeg_quality,
-        model_name=args.model,
+        model_name=model_path,
     )
 
     app = create_app(worker)
