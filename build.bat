@@ -42,18 +42,16 @@ if not exist "dist\PeopleCounter\uploads" mkdir "dist\PeopleCounter\uploads"
 if not exist "dist\PeopleCounter\reports" mkdir "dist\PeopleCounter\reports"
 
 echo.
-echo Verifying build (GPU / models self-check)...
-"dist\PeopleCounter\PeopleCounter.exe" --diag
-if exist "dist\PeopleCounter\exe_diag.txt" type "dist\PeopleCounter\exe_diag.txt"
-echo If the line above does not say ^(CUDA active^), the app will run on CPU -
-echo update the NVIDIA driver on the TARGET PC (needs 525+ for CUDA 12.x).
-
-echo.
 echo ============================================
 echo   Build complete!
 echo ============================================
 echo.
 echo Output: dist\PeopleCounter\
+echo.
+echo To verify GPU / run self-check:
+echo   dist\PeopleCounter\PeopleCounter.exe --diag
+echo   Then check dist\PeopleCounter\exe_diag.txt
+echo If it does not say ^(CUDA active^), update the NVIDIA driver (needs 525+).
 echo.
 echo To distribute:
 echo   1. Zip or RAR the dist\PeopleCounter\ folder

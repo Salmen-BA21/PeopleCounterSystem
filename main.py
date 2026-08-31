@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import socket
 import sys
@@ -25,6 +26,8 @@ from src.server import (
     create_app,
     resource_path,
 )
+
+_SINGLETON_MUTEX = "PeopleCounter_SingleInstance_v1"
 
 
 def _find_free_port() -> int:
@@ -88,8 +91,6 @@ def _write_error(path: Path, exc: Exception, runtime: str) -> None:
 
 def _msgbox_browser_fallback(error_log: Path) -> None:
     """Tell the user via Win32 MessageBox that the app will open in the browser."""
-    import ctypes
-
     detail = ""
     if error_log.exists():
         try:
@@ -114,14 +115,50 @@ def _msgbox_browser_fallback(error_log: Path) -> None:
     )
 
 
+def _write_diag_lightweight(path: Path) -> None:
+    """Fast diagnostics for --diag: no torch, no CUDA, no subprocess."""
+    lines = [f"python: {sys.version.split()[0]}  frozen: {getattr(sys, 'frozen', False)}"]
+    try:
+        import torch as _t
+        lines.append(f"torch: {_t.__version__}  cuda runtime: {_t.version.cuda}")
+        if _t.cuda.is_available():
+            free_b, total_b = _t.cuda.mem_get_info(0)
+            lines.append(f"gpu: {_t.cuda.get_device_name(0)}  (CUDA active)  vram: {(total_b - free_b) / (1024**3):.1f} / {total_b / (1024**3):.1f} GB used")
+        else:
+            lines.append("gpu: not available (CPU mode)")
+    except Exception as exc:
+        lines.append(f"torch: not loaded — {exc}")
+    for name in ("yolo26n.pt", "yolo26s.pt"):
+        where = "exe-dir" if resource_path(name).exists() else ("bundled" if bundled_path(name).exists() else "MISSING")
+        lines.append(f"{name}: {where}")
+    lines.append(f"web dir: {'ok' if bundled_path('web').exists() else 'MISSING'}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _acquire_singleton() -> bool:
+    """Return True if this is the only instance running. Uses Win32 mutex."""
+    handle = ctypes.windll.kernel32.CreateMutexW(None, True, _SINGLETON_MUTEX)
+    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return False
+    return True
+
+
 def main() -> None:
+    if "--diag" in sys.argv:
+        try:
+            _write_diag_lightweight(resource_path("exe_diag.txt"))
+        except OSError:
+            pass
+        return
+
+    if not _acquire_singleton():
+        return
+
     try:
         write_diagnostics(resource_path("exe_diag.txt"))
     except OSError:
         pass
-
-    if "--diag" in sys.argv:
-        return
 
     port = _find_free_port()
 
@@ -153,48 +190,44 @@ def main() -> None:
 
     ensure_prerequisites()
 
-    window = webview.create_window(
-        title="People Counter",
-        url=f"http://127.0.0.1:{port}",
-        width=1280,
-        height=800,
-        resizable=True,
-    )
+    url = f"http://127.0.0.1:{port}"
+    error_log = resource_path("webview_error.txt")
 
     # --- Attempt 1: default runtime (netfx) ---
-    error_log = resource_path("webview_error.txt")
     try:
+        webview.create_window(title="People Counter", url=url, width=1280, height=800, resizable=True)
         webview.start()
         sys.exit(0)
     except Exception as exc:
         _write_error(error_log, exc, runtime="netfx")
+        try:
+            webview.destroy_all_windows()
+        except Exception:
+            pass
 
     # --- Attempt 2: coreclr fallback (.NET Core runtime) ---
     os.environ["PYTHONNET_RUNTIME"] = "coreclr"
     try:
-        # Re-import clr with the new runtime setting
         import importlib
         import clr as _clr_mod  # noqa: F401
         importlib.reload(_clr_mod)
 
-        window2 = webview.create_window(
-            title="People Counter",
-            url=f"http://127.0.0.1:{port}",
-            width=1280,
-            height=800,
-            resizable=True,
-        )
+        webview.create_window(title="People Counter", url=url, width=1280, height=800, resizable=True)
         webview.start()
         sys.exit(0)
     except Exception as exc:
         _write_error(error_log, exc, runtime="coreclr")
+        try:
+            webview.destroy_all_windows()
+        except Exception:
+            pass
 
     # --- Both runtimes failed: fall back to browser ---
     _msgbox_browser_fallback(error_log)
-    webbrowser.open(f"http://127.0.0.1:{port}")
+    webbrowser.open(url)
     try:
         while True:
-            time.sleep(3600)  # keep serving while the tab is open
+            time.sleep(3600)
     except KeyboardInterrupt:
         pass
 
