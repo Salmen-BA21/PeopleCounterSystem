@@ -60,6 +60,14 @@ Verify GPU acceleration (optional):
 .venv\Scripts\python.exe -c "import torch; print('CUDA Available:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
+### Building the Windows app on a new PC
+
+- Install from `requirements.lock.txt` (not `requirements.txt`) — it pins exact versions including `torch 2.11.0+cu128`. Unpinned installs silently get CPU-only torch, which is the #1 cause of "works on my machine but slow elsewhere".
+- The target PC needs an NVIDIA driver **≥ 525** for CUDA 12.x. RTX GPUs are fully supported.
+- The native window needs **.NET Framework 4.7.2+** (built into Win10 1809+). On older PCs the app no longer crashes: it opens in the default browser instead — or install the [.NET Framework 4.8 runtime](https://dotnet.microsoft.com/download/dotnet-framework/net48) for the native window.
+- After every build, run `build.bat`'s built-in self-check (or `PeopleCounter.exe --diag`): it writes `exe_diag.txt` next to the exe stating whether CUDA is active and why not if it isn't.
+- Only `yolo26n.pt` / `yolo26s.pt` are bundled. To use larger models, drop the `.pt` file next to `PeopleCounter.exe` — it appears in the sidebar automatically.
+
 ---
 
 ## 🌐 Web Dashboard (Recommended)

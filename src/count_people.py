@@ -70,6 +70,7 @@ def current_people_after_crossing(current_people: int, direction: str, entering_
     return max(0, current_people - 1)
 
 
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, help="video file path or RTSP URL")
@@ -135,6 +136,20 @@ class PeopleCounter:
         self.last_centers: dict[int, tuple[float, float]] = {}
         self.crossed_track_directions: dict[int, str] = {}
         self.track_trails: dict[int, deque[tuple[int, int]]] = {}
+
+    def set_model(self, model: str | Any) -> None:
+        from ultralytics import YOLO
+        self.model = YOLO(model) if isinstance(model, str) else model
+        self.model.to(self.device)
+        self.reset_counts()
+
+    def set_device(self, device: str) -> None:
+        old = self.device
+        self.device = device
+        self.model.to(device)
+        if old.startswith("cuda") and not device.startswith("cuda"):
+            torch.cuda.empty_cache()
+        self.reset_counts()
 
     def set_line(self, x1: int, y1: int, x2: int, y2: int, entering_direction: str | None = None) -> None:
         self.count_line = (x1, y1, x2, y2)
@@ -270,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"loaded source in {time.perf_counter() - load_started:.2f}s  fps: {fps:.2f}  resolution: {width}x{height}")
     writer = cv2.VideoWriter(
         args.output,
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore[reportAttributeAccessIssue]
         fps,
         (width, height),
     )

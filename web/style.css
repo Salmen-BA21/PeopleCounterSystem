@@ -137,18 +137,13 @@ body {
   margin-left: 2px;
 }
 
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  font-size: 0.8rem;
+#device-badge {
   font-weight: 700;
-  color: var(--ink-soft);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
 }
+
+
 
 .lang-toggle {
   height: 36px;
@@ -210,23 +205,7 @@ body {
   display: none;
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #b8b0a4;
-}
 
-.status-live .status-dot {
-  background: var(--in);
-  box-shadow: 0 0 0 4px rgba(47, 158, 99, 0.15);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
 
 /* ---- Hero metrics ---- */
 .metrics {
@@ -714,6 +693,135 @@ body {
 
 .camera-chip.active .camera-addr {
   color: var(--in);
+}
+
+.model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.model-chips .seg-btn {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  font-size: 0.78rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.model-chips .seg-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.model-chips .seg-btn.active {
+  background: var(--in-soft);
+  border-color: var(--in);
+  color: var(--in);
+}
+
+.hardware-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hw-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.hw-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.hw-gpu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hw-gpu-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hw-gpu-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hw-gpu-detail {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.hw-devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hw-device-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.hw-device-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.hw-device-chip:focus-visible {
+  outline: 2px solid var(--in);
+  outline-offset: 2px;
+}
+
+.hw-device-chip.active {
+  background: var(--in-soft);
+  border-color: var(--in);
+  color: var(--in);
+}
+
+.hw-device-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .profile-list {

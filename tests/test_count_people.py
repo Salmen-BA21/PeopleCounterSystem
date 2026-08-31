@@ -82,39 +82,31 @@ class CountPeopleTests(unittest.TestCase):
 
         dummy_frame = np.zeros((200, 200, 3), dtype=np.uint8)
 
-        # Mock frame 1: person above line (y=80)
-        mock_boxes1 = MagicMock()
-        mock_boxes1.id = [1]
-        mock_boxes1.xyxy = [[90, 70, 110, 90]]
-        mock_res1 = MagicMock()
-        mock_res1.boxes = mock_boxes1
-        mock_model.track.return_value = [mock_res1]
+        def boxes_at(y_top, track_id=1):
+            mock_boxes = MagicMock()
+            mock_boxes.xyxy = [[90, y_top, 130, y_top + 40]]
+            mock_boxes.id = [track_id]
+            mock_res = MagicMock()
+            mock_res.boxes = mock_boxes
+            return [mock_res]
 
+        # Mock frame 1: person above line (center y=80)
+        mock_model.track.return_value = boxes_at(60)
         annotated1, counts1 = counter.process_frame(dummy_frame)
         self.assertEqual(counts1["in"], 0)
         self.assertEqual(counts1["current"], 0)
+        first_id = next(iter(counter.last_centers))
 
-        # Mock frame 2: person crosses line downwards (y=120)
-        mock_boxes2 = MagicMock()
-        mock_boxes2.id = [1]
-        mock_boxes2.xyxy = [[90, 110, 110, 130]]
-        mock_res2 = MagicMock()
-        mock_res2.boxes = mock_boxes2
-        mock_model.track.return_value = [mock_res2]
-
+        # Mock frame 2: person crosses line downwards (center y=120), same track ID
+        mock_model.track.return_value = boxes_at(100, track_id=first_id)
         annotated2, counts2 = counter.process_frame(dummy_frame)
         self.assertEqual(counts2["in"], 1)
         self.assertEqual(counts2["current"], 1)
         self.assertEqual(counts2["last_crossing"], "north_to_south")
+        self.assertIn(first_id, counter.last_centers)  # same ID kept across movement
 
         # Mock frame 3: same person crosses back northward -> counts as out
-        mock_boxes3 = MagicMock()
-        mock_boxes3.id = [1]
-        mock_boxes3.xyxy = [[90, 80, 110, 100]]
-        mock_res3 = MagicMock()
-        mock_res3.boxes = mock_boxes3
-        mock_model.track.return_value = [mock_res3]
-
+        mock_model.track.return_value = boxes_at(65, track_id=first_id)
         _, counts3 = counter.process_frame(dummy_frame)
         self.assertEqual(counts3["out"], 1)
         self.assertEqual(counts3["current"], 0)

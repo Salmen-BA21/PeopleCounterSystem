@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import ctypes
 import os
+import platform
 import struct
 import sys
 import threading
@@ -85,6 +87,50 @@ class CameraProfilesRequest(BaseModel):
     password: str
 
 
+class ModelChangeRequest(BaseModel):
+    model: str
+
+
+class DeviceChangeRequest(BaseModel):
+    device: str
+
+
+YOLO26_MODELS = [
+    {"file": "yolo26n.pt", "name": "Nano", "label": "Fast", "speed": "39 ms", "accuracy": "40.9%", "params": "2.4 M"},
+    {"file": "yolo26s.pt", "name": "Small", "label": "Balanced", "speed": "87 ms", "accuracy": "48.6%", "params": "9.5 M"},
+    {"file": "yolo26m.pt", "name": "Medium", "label": "Accurate", "speed": "220 ms", "accuracy": "53.1%", "params": "20.4 M"},
+    {"file": "yolo26l.pt", "name": "Large", "label": "High accuracy", "speed": "286 ms", "accuracy": "55.0%", "params": "24.8 M"},
+    {"file": "yolo26x.pt", "name": "X-Large", "label": "Maximum", "speed": "526 ms", "accuracy": "57.5%", "params": "55.7 M"},
+]
+
+
+def _resolve_model_path(filename: str) -> str:
+    """Resolve a model filename to an absolute path, checking root then bundled."""
+    for resolver in (resource_path, bundled_path):
+        p = resolver(filename)
+        if p.exists():
+            return str(p)
+    return filename  # let Ultralytics handle download
+
+
+def canonical_device(device: str) -> str:
+    """One name per device so UI chip comparisons always match ("cuda" == "cuda:0")."""
+    return "cuda:0" if device == "cuda" else device
+
+
+_switch_lock = threading.Lock()  # ponytail: single lock — model/device switches are rare
+
+
+def restart_worker_with(worker_instance: VideoStreamWorker, job) -> None:
+    """Stop the worker, apply job() off-thread, restart. Serialized; restarts even if job fails."""
+    with _switch_lock:
+        worker_instance.stop()
+        try:
+            job()
+        finally:
+            worker_instance.start()
+
+
 class VideoStreamWorker:
     """Worker running in a background thread for frame capture and inference."""
 
@@ -103,6 +149,7 @@ class VideoStreamWorker:
         self.thread: threading.Thread | None = None
         self.lock = threading.Lock()
         self.switch_source_requested: str | None = None
+        self.generation = 0  # bumped by start(); a stale loop exits even if stop()'s join timed out
 
         self.latest_jpeg: bytes | None = None
         self.latest_timestamp_ms: int = 0
@@ -112,16 +159,22 @@ class VideoStreamWorker:
         self.width: int = 0
         self.height: int = 0
         self.source_fps: float = 20.0
+        self.last_frame_work: float = 0.0
 
     def start(self) -> None:
         if self.running:
             return
         self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.generation += 1
+        if sys.platform == "win32":
+            ctypes.windll.winmm.timeBeginPeriod(1)  # default 15.6ms sleep granularity ruins frame pacing
+        self.thread = threading.Thread(target=self._run_loop, args=(self.generation,), daemon=True)
         self.thread.start()
 
     def stop(self) -> None:
         self.running = False
+        if sys.platform == "win32":
+            ctypes.windll.winmm.timeEndPeriod(1)
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2.0)
 
@@ -136,7 +189,7 @@ class VideoStreamWorker:
             f"fps: {self.source_fps:.2f}  resolution: {self.width}x{self.height}  source: {source}"
         )
 
-    def _run_loop(self) -> None:
+    def _run_loop(self, generation: int) -> None:
         capture = None
         is_file_source = False
 
@@ -159,7 +212,7 @@ class VideoStreamWorker:
                 capture = None
 
         try:
-            while self.running:
+            while self.running and generation == self.generation:
                 # Handle dynamic source switch
                 with self.lock:
                     if self.switch_source_requested is not None:
@@ -186,6 +239,15 @@ class VideoStreamWorker:
                     time.sleep(0.01)
                     continue
 
+                # Skip queued frames when we can't keep up — keeps output FPS
+                # near native for files, and keeps counts current for live sources.
+                if self.source_fps > 0 and self.last_frame_work > (1.0 / self.source_fps):
+                    skips = min(int(self.last_frame_work * self.source_fps) - 1, 5)
+                    for _ in range(skips):
+                        if not capture.grab():
+                            break
+
+                frame_started = time.perf_counter()
                 ok, frame = capture.read()
                 if not ok:
                     if is_file_source:
@@ -218,9 +280,10 @@ class VideoStreamWorker:
                     self.latest_counts = counts
                     self.frame_id += 1
 
-                # Frame pacing for video files
+                # Real-time pacing for video files: sleep only the leftover time
+                self.last_frame_work = time.perf_counter() - frame_started
                 if is_file_source and self.source_fps > 0:
-                    time.sleep(max(0.001, (1.0 / self.source_fps) * 0.4))
+                    time.sleep(max(0.001, (1.0 / self.source_fps) - self.last_frame_work))
         finally:
             if capture is not None:
                 capture.release()
@@ -301,6 +364,8 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
             "height": worker_instance.height,
             "fps": worker_instance.fps_measured,
             "running": worker_instance.running,
+            "device": canonical_device(worker_instance.counter.device),
+            "model": Path(worker_instance.model_name).name if worker_instance.model_name else "",
         }
 
     @app.get("/api/videos")
@@ -410,6 +475,87 @@ def create_app(worker_instance: VideoStreamWorker) -> FastAPI:
 
         worker_instance.set_source(uri)
         return {"status": "ok", "host": req.host}
+
+
+    @app.get("/api/models")
+    async def list_models() -> dict[str, Any]:
+        current = Path(worker_instance.model_name).name if worker_instance.model_name else ""
+        models = []
+        for m in YOLO26_MODELS:
+            resolved = _resolve_model_path(m["file"])
+            downloaded = Path(resolved).exists() if resolved != m["file"] else (Path(m["file"]).exists() or bundled_path(m["file"]).exists())
+            models.append({**m, "downloaded": downloaded, "active": m["file"] == current})
+        return {"models": models, "current": current}
+
+    @app.post("/api/model")
+    async def change_model(req: ModelChangeRequest) -> dict[str, Any]:
+        target = req.model.strip()
+        if not any(m["file"] == target for m in YOLO26_MODELS):
+            raise HTTPException(status_code=400, detail=f"Unknown model: {target}")
+        model_path = _resolve_model_path(target)
+
+        def _work() -> None:
+            worker_instance.counter.set_model(model_path)
+            worker_instance.model_name = model_path
+
+        try:
+            # YOLO() load takes seconds — run off the event loop, worker stopped meanwhile
+            await asyncio.get_running_loop().run_in_executor(None, restart_worker_with, worker_instance, _work)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not load model: {exc}")
+        return {"status": "ok", "model": target}
+
+    @app.get("/api/hardware")
+    async def get_hardware() -> dict[str, Any]:
+        gpus = []
+        cuda_error = None
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                free_b, _total_b = torch.cuda.mem_get_info(i)
+                gpus.append({
+                    "index": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "vram_gb": round(props.total_memory / (1024 ** 3), 1),
+                    # low free VRAM => Windows spills CUDA to RAM => massive slowdown
+                    "vram_free_gb": round(free_b / (1024 ** 3), 1),
+                })
+        else:
+            try:
+                torch.cuda.init()
+                cuda_error = "No NVIDIA GPU visible to PyTorch"
+            except Exception as exc:
+                cuda_error = str(exc)
+        return {
+            "cuda_available": torch.cuda.is_available(),
+            "cuda_version": str(torch.version.cuda) if torch.cuda.is_available() else None,
+            "cuda_error": cuda_error,
+            "gpus": gpus,
+            "cpu": platform.processor() or "Unknown CPU",
+            "current_device": canonical_device(worker_instance.counter.device),
+        }
+
+    @app.post("/api/device")
+    async def change_device(req: DeviceChangeRequest) -> dict[str, Any]:
+        device = canonical_device(req.device.strip())
+        if device.startswith("cuda"):
+            if not torch.cuda.is_available():
+                raise HTTPException(status_code=400, detail="CUDA is not available on this system")
+            if ":" in device:
+                idx = int(device.split(":")[1])
+                if idx >= torch.cuda.device_count():
+                    raise HTTPException(status_code=400, detail=f"GPU {idx} not found")
+        elif device != "cpu":
+            raise HTTPException(status_code=400, detail=f"Invalid device: {device}")
+
+        def _work() -> None:
+            worker_instance.counter.set_device(device)
+
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, restart_worker_with, worker_instance, _work)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not switch device: {exc}")
+        return {"status": "ok", "device": device}
 
 
     @app.get("/api/line")

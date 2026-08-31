@@ -15,8 +15,14 @@ if not exist "%PYTHON%" (
     exit /b 1
 )
 
-echo [1/3] Installing pywebview and pyinstaller...
-"%PYTHON%" -m pip install pywebview pyinstaller --quiet
+echo [1/3] Installing dependencies...
+if exist "requirements.lock.txt" (
+    echo   Using pinned requirements.lock.txt ^(reproducible build^)
+    "%PYTHON%" -m pip install -r requirements.lock.txt --quiet
+) else (
+    echo   WARNING: requirements.lock.txt missing - versions may drift between PCs
+    "%PYTHON%" -m pip install -r requirements.txt pywebview pyinstaller --quiet
+)
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies.
     pause
@@ -34,6 +40,13 @@ if errorlevel 1 (
 echo [3/3] Creating runtime folders...
 if not exist "dist\PeopleCounter\uploads" mkdir "dist\PeopleCounter\uploads"
 if not exist "dist\PeopleCounter\reports" mkdir "dist\PeopleCounter\reports"
+
+echo.
+echo Verifying build (GPU / models self-check)...
+"dist\PeopleCounter\PeopleCounter.exe" --diag
+if exist "dist\PeopleCounter\exe_diag.txt" type "dist\PeopleCounter\exe_diag.txt"
+echo If the line above does not say ^(CUDA active^), the app will run on CPU -
+echo update the NVIDIA driver on the TARGET PC (needs 525+ for CUDA 12.x).
 
 echo.
 echo ============================================

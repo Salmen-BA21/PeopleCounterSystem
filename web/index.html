@@ -25,11 +25,9 @@
         </div>
       </div>
       <div class="topbar-right">
+        <span id="device-badge" class="source-chip">--</span>
         <span class="source-chip"><span data-i18n="source">Source:</span> <strong id="cfg-source">test1.mp4</strong></span>
-        <span id="connection-badge" class="status">
-          <span class="status-dot"></span>
-          <span id="connection-text">Connecting…</span>
-        </span>
+
         <button id="lang-toggle" class="lang-toggle" type="button" aria-label="Language" title="Language">FR</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light or dark mode" title="Toggle light or dark mode">
           <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -168,6 +166,40 @@
             </div>
             <p class="feed-hint" data-i18n="cameraHint">Cameras are found automatically. Use the credentials you set on the camera itself.</p>
           </div>
+        </div>
+
+        <div class="setting-group">
+          <div class="group-head">
+            <h2 data-i18n="detectionModel">Detection model</h2>
+            <span id="cfg-model" class="line-pill">yolo26n.pt</span>
+          </div>
+
+          <p class="field-label" data-i18n="modelHint">Larger models are more accurate but slower.</p>
+
+          <div id="model-chips" class="model-chips">
+            <button type="button" class="seg-btn active" data-model="yolo26n.pt">Nano — Fast</button>
+          </div>
+        </div>
+
+        <div class="setting-group" id="hardware-section">
+          <div class="group-head">
+            <h2 data-i18n="hardware">Hardware</h2>
+            <span id="cfg-device" class="line-pill">—</span>
+          </div>
+          <div id="hardware-info" class="hardware-info">
+            <div class="hw-row">
+              <span class="hw-label" data-i18n="cpu">CPU</span>
+              <span id="hw-cpu-name" class="hw-value">—</span>
+            </div>
+            <div id="hw-gpu-list" class="hw-gpu-list"></div>
+            <p id="hw-no-gpu" class="field-label hidden" data-i18n="noGpuDetected">No GPU detected — using CPU</p>
+            <div class="hw-row">
+              <span class="hw-label" data-i18n="speed">Speed</span>
+              <span id="hw-speed" class="hw-value">—</span>
+            </div>
+          </div>
+          <div id="hw-devices" class="hw-devices"></div>
+          <p id="hardware-status" class="camera-status hidden"></p>
         </div>
 
         <div class="setting-group">

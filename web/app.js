@@ -13,11 +13,6 @@
   const videoCtx = videoCanvas.getContext('2d');
   const overlayCtx = overlayCanvas.getContext('2d');
 
-  const connectionBadge = document.getElementById('connection-badge');
-  const connectionText = document.getElementById('connection-text');
-  const latencyVal = document.getElementById('latency-val');
-  const fpsVal = document.getElementById('fps-val');
-
   const statInVal = document.getElementById('stat-in-val');
   const statOutVal = document.getElementById('stat-out-val');
   const statCurrentVal = document.getElementById('stat-current-val');
@@ -54,6 +49,17 @@
   const profileList = document.getElementById('profile-list');
   const btnCameraConnect = document.getElementById('btn-camera-connect');
 
+  const modelChips = document.getElementById('model-chips');
+  const cfgModel = document.getElementById('cfg-model');
+
+  const hwCpuName = document.getElementById('hw-cpu-name');
+  const hwGpuList = document.getElementById('hw-gpu-list');
+  const hwNoGpu = document.getElementById('hw-no-gpu');
+  const hwDevices = document.getElementById('hw-devices');
+  const hardwareStatus = document.getElementById('hardware-status');
+  const hwSpeed = document.getElementById('hw-speed');
+  const cfgDevice = document.getElementById('cfg-device');
+
   let selectedCamera = null;
   let selectedProfile = null;
   let cameraStatusTimer = null;
@@ -69,8 +75,8 @@
   }
 
   const cfgSource = document.getElementById('cfg-source');
-  const cfgRes = document.getElementById('cfg-res');
   const cfgLine = document.getElementById('cfg-line');
+  const deviceBadge = document.getElementById('device-badge');
 
   function set(el, value) {
     if (el) el.textContent = value;
@@ -140,6 +146,25 @@
       connecting: 'Connecting…',
       connectedTo: 'Connected to {0}',
       couldNotConnect: 'Could not connect: {0}',
+      detectionModel: 'Detection model',
+      modelHint: 'Larger models are more accurate but slower.',
+      modelChanged: 'Model changed to {0}',
+      modelFailed: 'Could not switch model: {0}',
+      downloading: 'Loading…',
+      hardware: 'Hardware',
+      cpu: 'CPU',
+      gpu: 'GPU',
+      noGpuDetected: 'No GPU detected — using CPU',
+      vram: 'VRAM',
+      cudaVersion: 'CUDA',
+      switchDevice: 'Switch',
+      deviceChanged: 'Switched to {0}',
+      deviceFailed: 'Could not switch: {0}',
+      scanningHardware: 'Scanning…',
+      currentDevice: 'Current',
+      speed: 'Speed',
+      fpsUnit: 'frames/s',
+      gpuError: 'GPU found but unusable: {0}',
     },
     fr: {
       title: 'Compteur de personnes — Comptage de visiteurs en direct',
@@ -204,6 +229,25 @@
       connecting: 'Connexion…',
       connectedTo: 'Connecté à {0}',
       couldNotConnect: 'Connexion impossible : {0}',
+      detectionModel: 'Modèle de détection',
+      modelHint: 'Les modèles plus grands sont plus précis mais plus lents.',
+      modelChanged: 'Modèle changé pour {0}',
+      modelFailed: 'Impossible de changer le modèle : {0}',
+      downloading: 'Chargement…',
+      hardware: 'Matériel',
+      cpu: 'Processeur',
+      gpu: 'Carte graphique',
+      noGpuDetected: 'Aucune carte graphique détectée — utilisation du processeur',
+      vram: 'Mémoire vidéo',
+      cudaVersion: 'CUDA',
+      switchDevice: 'Changer',
+      deviceChanged: 'Périphérique changé pour {0}',
+      deviceFailed: 'Impossible de changer : {0}',
+      scanningHardware: 'Analyse…',
+      currentDevice: 'Actuel',
+      speed: 'Vitesse',
+      fpsUnit: 'images/s',
+      gpuError: 'Carte graphique détectée mais inutilisable : {0}',
     },
   };
 
@@ -226,7 +270,6 @@
     if (isDrawing) {
       set(drawPrompt, !drawPoint1 ? t('step1') : (!drawPoint2 ? t('step2') : t('lineLooksGood')));
     }
-    updateConnectionStatus();
   }
 
   function setupLang() {
@@ -263,16 +306,8 @@
   // State
   let wsVideo = null;
   let wsCounts = null;
-  let isVideoConnected = false;
-  let isCountsConnected = false;
 
   let currentLine = null;
-  let currentRes = [0, 0];
-
-  // FPS & Latency tracking
-  let frameCount = 0;
-  let lastFpsCalc = performance.now();
-  let latencyRolling = 0;
 
   // Drawing state
   let isDrawing = false;
@@ -296,15 +331,17 @@
     connectCountsWs();
   }
 
-  function updateConnectionStatus() {
-    const connected = isVideoConnected && isCountsConnected;
-    if (connected) {
-      connectionBadge.className = 'status status-live';
-      connectionText.textContent = t('live');
-    } else {
-      connectionBadge.className = 'status';
-      connectionText.textContent = isVideoConnected ? t('reconnecting') : t('connecting');
+  function reloadStream() {
+    if (wsVideo) {
+      wsVideo.onclose = null;
+      wsVideo.close();
     }
+    if (wsCounts) {
+      wsCounts.onclose = null;
+      wsCounts.close();
+    }
+    connectVideoWs();
+    connectCountsWs();
   }
 
   function connectVideoWs() {
@@ -312,35 +349,10 @@
     wsVideo = new WebSocket(url);
     wsVideo.binaryType = 'arraybuffer';
 
-    wsVideo.onopen = () => {
-      isVideoConnected = true;
-      updateConnectionStatus();
-    };
-
     wsVideo.onmessage = async (event) => {
       try {
         const buffer = event.data;
         if (buffer.byteLength < 8) return;
-
-        // Extract 8-byte big-endian server timestamp
-        const view = new DataView(buffer);
-        const serverTs = Number(view.getBigInt64(0));
-        const now = Date.now();
-        const latency = Math.max(0, now - serverTs);
-
-        // Exponential moving average for latency
-        latencyRolling = latencyRolling === 0 ? latency : Math.round(latencyRolling * 0.8 + latency * 0.2);
-        set(latencyVal, `${latencyRolling} ms`);
-
-        // Measure FPS
-        frameCount++;
-        const nowPerf = performance.now();
-        if (nowPerf - lastFpsCalc >= 1000) {
-          const fps = ((frameCount * 1000) / (nowPerf - lastFpsCalc)).toFixed(1);
-          set(fpsVal, fps);
-          frameCount = 0;
-          lastFpsCalc = nowPerf;
-        }
 
         // Decode JPEG with createImageBitmap for fastest hardware-accelerated decode
         const jpegBlob = new Blob([buffer.slice(8)], { type: 'image/jpeg' });
@@ -352,8 +364,6 @@
           videoCanvas.height = bitmap.height;
           overlayCanvas.width = bitmap.width;
           overlayCanvas.height = bitmap.height;
-          currentRes = [bitmap.width, bitmap.height];
-          set(cfgRes, `${bitmap.width} × ${bitmap.height}`);
         }
 
         videoCtx.drawImage(bitmap, 0, 0);
@@ -364,8 +374,6 @@
     };
 
     wsVideo.onclose = () => {
-      isVideoConnected = false;
-      updateConnectionStatus();
       setTimeout(connectVideoWs, 1500);
     };
 
@@ -378,11 +386,6 @@
     const url = getWsUrl('/ws/counts');
     wsCounts = new WebSocket(url);
 
-    wsCounts.onopen = () => {
-      isCountsConnected = true;
-      updateConnectionStatus();
-    };
-
     wsCounts.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -391,6 +394,11 @@
         statInVal.textContent = data.in ?? 0;
         statOutVal.textContent = data.out ?? 0;
         statCurrentVal.textContent = data.current ?? 0;
+
+        // Live processing speed — proves model/device switches took effect
+        if (hwSpeed) {
+          hwSpeed.textContent = data.fps > 0 ? `${Math.round(data.fps)} ${t('fpsUnit')}` : '—';
+        }
 
         // Last crossing notification
         if (data.last_crossing && data.last_crossing.trim() !== '') {
@@ -414,17 +422,12 @@
         if (data.entering_direction) {
           setActiveDir(data.entering_direction);
         }
-        if (data.resolution && data.resolution[0] > 0) {
-          set(cfgRes, `${data.resolution[0]} × ${data.resolution[1]}`);
-        }
       } catch (err) {
         console.error('Counts parse error:', err);
       }
     };
 
     wsCounts.onclose = () => {
-      isCountsConnected = false;
-      updateConnectionStatus();
       setTimeout(connectCountsWs, 1500);
     };
 
@@ -717,6 +720,154 @@
     }
   }
 
+  async function loadModels() {
+    try {
+      const resp = await fetch('/api/models');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const models = data.models || [];
+      if (cfgModel) cfgModel.textContent = data.current || '';
+
+      modelChips.innerHTML = '';
+      models.forEach((m) => {
+        if (!m.downloaded && !m.active) return; // not installed on this PC — don't offer it
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'seg-btn' + (m.active ? ' active' : '');
+        chip.dataset.model = m.file;
+        chip.textContent = m.name + ' — ' + m.label;
+        chip.addEventListener('click', () => switchModel(m.file, chip));
+        modelChips.appendChild(chip);
+      });
+    } catch (err) {
+      console.error('Failed to load models:', err);
+    }
+  }
+
+  async function switchModel(file, chip) {
+    if (chip.classList.contains('active')) return;
+    const prev = chip.textContent;
+    chip.textContent = t('downloading');
+    chip.disabled = true;
+    try {
+      const resp = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: file }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        throw new Error(data?.detail || `HTTP ${resp.status}`);
+      }
+      await loadModels(); // rebuild chips from server truth (active flag)
+      loadConfig();
+    } catch (err) {
+      alert(t('modelFailed', err.message));
+      chip.textContent = prev;
+    } finally {
+      chip.disabled = false;
+    }
+  }
+
+  async function scanHardware() {
+    if (hardwareStatus) {
+      hardwareStatus.textContent = t('scanningHardware');
+      hardwareStatus.classList.remove('hidden');
+    }
+    try {
+      const resp = await fetch('/api/hardware');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      renderHardwareInfo(data);
+    } catch (err) {
+      if (hardwareStatus) hardwareStatus.textContent = t('couldNotScan', err.message);
+    }
+  }
+
+  function renderHardwareInfo(data) {
+    if (hardwareStatus) hardwareStatus.classList.add('hidden');
+    if (hwCpuName) hwCpuName.textContent = data.cpu || '—';
+
+    if (hwGpuList) hwGpuList.innerHTML = '';
+    if (hwNoGpu) {
+      if (data.gpus.length === 0) {
+        hwNoGpu.textContent = data.cuda_error ? t('gpuError', data.cuda_error) : t('noGpuDetected');
+        hwNoGpu.classList.remove('hidden');
+      } else {
+        hwNoGpu.classList.add('hidden');
+      }
+    }
+
+    data.gpus.forEach((gpu) => {
+      const card = document.createElement('div');
+      card.className = 'hw-gpu-card';
+      const vram = gpu.vram_free_gb !== undefined
+        ? `${(gpu.vram_gb - gpu.vram_free_gb).toFixed(1)} / ${gpu.vram_gb} GB`
+        : `${gpu.vram_gb} GB`;
+      card.innerHTML = `<span class="hw-gpu-name">${gpu.name}</span><span class="hw-gpu-detail">${t('vram')}: ${vram}</span>`;
+      hwGpuList.appendChild(card);
+    });
+
+    if (data.cuda_version && hwGpuList && data.gpus.length > 0) {
+      const cudaRow = document.createElement('div');
+      cudaRow.className = 'hw-row';
+      cudaRow.innerHTML = `<span class="hw-label">${t('cudaVersion')}</span><span class="hw-value">${data.cuda_version}</span>`;
+      hwGpuList.appendChild(cudaRow);
+    }
+
+    renderDeviceChips(data);
+  }
+
+  function renderDeviceChips(data) {
+    if (!hwDevices) return;
+    hwDevices.innerHTML = '';
+    const current = data.current_device || 'cpu';
+
+    if (data.gpus.length > 0) {
+      data.gpus.forEach((gpu) => {
+        const dev = `cuda:${gpu.index}`;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'hw-device-chip' + (current === dev ? ' active' : '');
+        chip.textContent = gpu.name.replace('NVIDIA ', '');
+        chip.addEventListener('click', () => switchDevice(dev, chip));
+        hwDevices.appendChild(chip);
+      });
+    }
+
+    const cpuChip = document.createElement('button');
+    cpuChip.type = 'button';
+    cpuChip.className = 'hw-device-chip' + (current === 'cpu' ? ' active' : '');
+    cpuChip.textContent = 'CPU';
+    cpuChip.addEventListener('click', () => switchDevice('cpu', cpuChip));
+    hwDevices.appendChild(cpuChip);
+  }
+
+  async function switchDevice(device, chip) {
+    if (chip.classList.contains('active')) return;
+    const prev = chip.textContent;
+    chip.textContent = t('switchDevice');
+    chip.disabled = true;
+    try {
+      const resp = await fetch('/api/device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        throw new Error(data?.detail || `HTTP ${resp.status}`);
+      }
+      await scanHardware(); // rebuild chips from server truth (current device)
+      loadConfig();
+    } catch (err) {
+      alert(t('deviceFailed', err.message));
+      chip.textContent = prev;
+    } finally {
+      chip.disabled = false;
+    }
+  }
+
   function setupFeedEvents() {
     segButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -898,6 +1049,26 @@
     }
   }
 
+  async function loadConfig() {
+    try {
+      const resp = await fetch('/api/config');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (deviceBadge) {
+        const dev = (data.device || 'cpu').toUpperCase();
+        const model = data.model || '';
+        deviceBadge.textContent = dev + (model ? ' · ' + model : '');
+      }
+      if (cfgDevice) cfgDevice.textContent = (data.device || 'cpu').toUpperCase();
+      if (data.source) {
+        const base = data.source.split(/[\\/]/).pop();
+        if (cfgSource) cfgSource.textContent = base;
+      }
+    } catch (err) {
+      console.error('Failed to load config:', err);
+    }
+  }
+
   function init() {
     setupTheme();
     setupLang();
@@ -905,7 +1076,10 @@
     setupDrawingEvents();
     setupButtonEvents();
     setupFeedEvents();
+    loadModels();
     loadAvailableVideos();
+    loadConfig();
+    scanHardware();
   }
 
   // Initialize once DOM is ready

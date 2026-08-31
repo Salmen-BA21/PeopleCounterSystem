@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -11,7 +12,8 @@ a = Analysis(
     datas=[
         ('web', 'web'),
         ('yolo26n.pt', '.'),
-    ],
+        ('yolo26s.pt', '.'),
+    ] + collect_data_files('onvif'),
     hiddenimports=[
         # pywebview
         'webview',
@@ -39,12 +41,13 @@ a = Analysis(
         'src.count_people',
         'src.server',
         'src.discover_cameras',
+        'src.prereqs',
         # detection / video
         'cv2',
         'numpy',
         'torch',
         'ultralytics',
-    ],
+    ] + collect_submodules('onvif') + collect_submodules('zeep') + collect_submodules('lxml'),
     excludes=[
         'PyQt5',
         'PyQt6',
@@ -72,7 +75,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # UPX corrupts torch/WebView2 DLLs on some machines — silent CUDA failures
     console=False,
 )
 
@@ -82,7 +85,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='PeopleCounter',
 )
